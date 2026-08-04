@@ -25,7 +25,7 @@
 - Vue 3 + Vite
 - CodeMirror 6（编辑器）
 - markdown-it + highlight.js（渲染与代码高亮，复制时样式全部内联）
-- 无后端：全部数据保存在浏览器 localStorage
+- 无后端：全部数据保存在浏览器本地（localStorage / IndexedDB），静态托管即可运行
 
 ## 安装与启动
 
