@@ -91,6 +91,19 @@
         </div>
         <button class="text-button" type="button" @click="resetCustom">重置「{{ theme.name }}」的全部自定义</button>
       </div>
+
+      <div class="s-divider"></div>
+
+      <div class="s-row">
+        <div class="s-label">图片存储</div>
+        <div class="s-display">{{ imageStatsText }}</div>
+        <div class="s-hint">
+          粘贴的图片只保存在本浏览器（IndexedDB），启动时会自动清理没有被任何文章引用的图片；回收站里的文章引用会被保留。
+        </div>
+        <button class="text-button" type="button" :disabled="cleaningImages" @click="cleanImages">
+          {{ cleaningImages ? '清理中…' : '立即清理未使用的图片' }}
+        </button>
+      </div>
     </div>
 
     <!-- 贴纸 Tab -->
@@ -116,13 +129,52 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Icon from './Icon.vue'
-import { store, theme, activeAccent, activeSlotColors } from '../lib/store.js'
+import { store, theme, activeAccent, activeSlotColors, usedImageIds, notify } from '../lib/store.js'
 import { fontOptions, buildStyles } from '../lib/themes.js'
+import { listImages, pruneImages } from '../lib/imagedb.js'
 
 const tab = ref('style')
 const customOpen = ref(false)
+
+// ---- 图片存储统计与清理 ----
+const imageStatsText = ref('统计中…')
+const cleaningImages = ref(false)
+
+const formatSize = (bytes) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+
+async function refreshImageStats() {
+  try {
+    const items = await listImages()
+    const total = items.reduce((sum, item) => sum + item.size, 0)
+    imageStatsText.value = items.length ? `${items.length} 张图片 · ${formatSize(total)}` : '暂无图片'
+  } catch {
+    imageStatsText.value = '无法读取'
+  }
+}
+
+async function cleanImages() {
+  cleaningImages.value = true
+  try {
+    const { removed, freed } = await pruneImages(usedImageIds())
+    notify(removed ? `已清理 ${removed} 张未使用图片，释放 ${formatSize(freed)}` : '没有可清理的图片')
+    await refreshImageStats()
+  } catch {
+    notify('清理失败，请重试')
+  } finally {
+    cleaningImages.value = false
+  }
+}
+
+watch(
+  () => store.ui.settingsPanelOpen,
+  (open) => {
+    if (open) refreshImageStats()
+  },
+  { immediate: true }
+)
 
 const galleryModes = [
   { id: 'collage', name: '拼贴', hint: '主图更大，适合有视觉重点的组图' },

@@ -2,7 +2,7 @@ import { reactive, computed, watch } from 'vue'
 import { themes } from './themes.js'
 import { sample } from './sample.js'
 import { setImageResolver } from './renderer.js'
-import { getImageUrl, warmImageCache } from './imagedb.js'
+import { getImageUrl, warmImageCache, pruneImages } from './imagedb.js'
 import {
   archiveSupported,
   restoreHandle,
@@ -279,9 +279,23 @@ export const store = reactive({
 
 // 渲染器通过它把 local: 图片引用解析成内存中的 objectURL
 setImageResolver((src) => getImageUrl(src.slice('local:'.length)))
-warmImageCache().then(() => {
+warmImageCache().then(async () => {
   store.imageCacheVersion += 1
+  // 启动时自动清理孤儿图片（回收站与备份里的引用保留）
+  await pruneImages(usedImageIds()).catch(() => {})
 })
+
+// 所有存活文档（含回收站与备份）仍在引用的图片 id
+export function usedImageIds() {
+  const ids = new Set()
+  const scan = (text) => {
+    for (const m of String(text || '').matchAll(/local:(img-[a-z0-9]+)/g)) ids.add(m[1])
+  }
+  for (const d of store.docs) scan(d.content)
+  for (const d of store.trash) scan(d.content)
+  scan(store.backupMd)
+  return [...ids]
+}
 
 export const theme = computed(() => themes.find((t) => t.id === store.themeId) || themes[0])
 export const activeAccent = computed(

@@ -81,3 +81,48 @@ export function blobToDataUrl(blob) {
     reader.readAsDataURL(blob)
   })
 }
+
+// ---- 占用统计与清理 ----
+
+export async function listImages() {
+  const ids = await allImageIds()
+  const items = []
+  for (const id of ids) {
+    const blob = await getImage(id)
+    if (blob) items.push({ id, size: blob.size || 0 })
+  }
+  return items
+}
+
+export async function deleteImage(id) {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    tx.objectStore(STORE).delete(id)
+    tx.oncomplete = () => {
+      const url = objectUrls.get(id)
+      if (url) {
+        URL.revokeObjectURL(url)
+        objectUrls.delete(id)
+      }
+      resolve()
+    }
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+// 清理没有被任何文档引用的图片（孤儿），返回清理数量与释放字节数
+export async function pruneImages(keepIds) {
+  const keep = new Set(keepIds)
+  const items = await listImages()
+  let removed = 0
+  let freed = 0
+  for (const item of items) {
+    if (!keep.has(item.id)) {
+      await deleteImage(item.id)
+      removed += 1
+      freed += item.size
+    }
+  }
+  return { removed, freed }
+}
