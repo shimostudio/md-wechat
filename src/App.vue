@@ -414,7 +414,7 @@ async function inlineLocalImages(htmlText) {
 }
 
 async function copySource() {
-  const ok = await copyText(stripPreviewMeta(html.value))
+  const ok = await copyText(await inlineLocalImages(stripPreviewMeta(html.value)))
   notify(ok ? 'HTML 源码已复制' : '复制失败')
 }
 
