@@ -1,4 +1,6 @@
 # MD公众号排版
+<img width="5104" height="2390" alt="image" src="https://github.com/user-attachments/assets/5396e2d0-a417-48b7-9b01-848a4d24eeae" />
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Pages](https://github.com/laogou717/md-wechat/actions/workflows/deploy.yml/badge.svg)](https://github.com/laogou717/md-wechat/actions/workflows/deploy.yml)
