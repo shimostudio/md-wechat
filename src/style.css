@@ -3659,29 +3659,48 @@ body {
   transition: margin-right 0.18s ease, visibility 0s 0.18s;
 }
 
-.stabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 10px 12px 0;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
+.qhint {
+  position: relative;
+  display: inline-block;
+  margin-left: 5px;
+  vertical-align: middle;
 }
 
-.stab {
-  border: none;
-  background: none;
-  padding: 7px 14px;
-  font-size: 12px;
-  color: var(--ink-2);
-  border-bottom: 2px solid transparent;
+.qhint-btn {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  place-items: center;
+  color: var(--ink-3);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.stab.active {
+.qhint-btn:hover {
   color: var(--ink);
-  font-weight: 700;
-  border-bottom-color: var(--dark);
+  border-color: var(--ink-3);
+}
+
+.qhint-pop {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 70;
+  width: 232px;
+  padding: 9px 11px;
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(60, 50, 30, 0.14);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.65;
 }
 
 .spanel {
