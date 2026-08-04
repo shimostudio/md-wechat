@@ -59,49 +59,6 @@
         </div>
 
         <button class="doc-new" type="button" @click="createNew">＋ 新建文章</button>
-
-        <div class="side-divider"></div>
-
-        <div class="side-section">
-          <h2>本地存档</h2>
-        </div>
-        <div class="archive">
-          <button class="arc-btn" type="button" @click="importInput?.click()">
-            <Icon name="upload" :size="15" aria-hidden="true" />
-            导入 Markdown（可多选）
-          </button>
-
-          <template v-if="store.archive.status === 'on'">
-            <div class="arc-dir">
-              <div class="arc-dir-row">
-                <Icon name="folder" :size="14" aria-hidden="true" />
-                <span class="arc-dir-path" :title="store.archive.dirName">{{ store.archive.dirName }}</span>
-                <button class="arc-dir-change" type="button" @click="changeDir">更改</button>
-              </div>
-              <div class="arc-dir-hint">已开启目录存档：文章会<b>自动同步为 .md 文件</b>存到该目录，换电脑、重装浏览器都不丢。</div>
-            </div>
-          </template>
-
-          <template v-else-if="store.archive.status === 'prompt'">
-            <button class="arc-btn" type="button" @click="reauth">
-              <Icon name="folder" :size="15" aria-hidden="true" />
-              重新授权存档目录{{ store.archive.dirName ? `（${store.archive.dirName}）` : '' }}
-            </button>
-            <div class="arc-hint">浏览器需要重新授权后才能继续同步。</div>
-          </template>
-
-          <template v-else-if="store.archive.status === 'unsupported'">
-            <div class="arc-hint">当前浏览器不支持目录存档（Chrome / Edge 可用），用「导入 / 导出 .md」手动留档即可。</div>
-          </template>
-
-          <template v-else>
-            <button class="arc-btn" type="button" @click="enable">
-              <Icon name="folder" :size="15" aria-hidden="true" />
-              选择存档目录，开启自动同步
-            </button>
-            <div class="arc-hint">开启后文章自动同步为 .md 存到你选的文件夹。</div>
-          </template>
-        </div>
       </template>
 
       <section v-else class="trash-view" aria-labelledby="trash-view-title">
@@ -141,8 +98,6 @@
 
         <p class="trash-policy">最多保留 10 篇；超过后会自动清除最早删除的文章。</p>
       </section>
-
-      <input ref="importInput" type="file" accept=".md,.markdown,.txt" multiple hidden @change="onImportFiles" />
     </div>
   </aside>
 </template>
@@ -160,15 +115,10 @@ import {
   deleteDocument,
   restoreFromTrash,
   removeFromTrash,
-  importContents,
-  initArchive,
-  enableArchive,
-  reauthArchive,
 } from '../lib/store.js'
 
 const query = ref('')
 const menuFor = ref(null)
-const importInput = ref(null)
 const documentView = computed(() => (store.ui.documentView === 'trash' ? 'trash' : 'documents'))
 
 const visibleDocs = computed(() => {
@@ -255,34 +205,6 @@ function purgeDoc(doc) {
   }
 }
 
-function onImportFiles(e) {
-  const files = Array.from(e.target.files || [])
-  if (!files.length) return
-  Promise.all(files.map((f) => f.text().then((content) => ({ name: f.name, content })))).then((list) => {
-    const docs = importContents(list)
-    notify(docs.length ? `已导入 ${docs.length} 篇文章` : '文件内容为空')
-  })
-  e.target.value = ''
-}
-
-async function enable() {
-  try {
-    if (await enableArchive()) notify('目录存档已开启，文章将自动同步')
-  } catch {
-    notify('未选择目录，存档未开启')
-  }
-}
-
-async function changeDir() {
-  await enable()
-}
-
-async function reauth() {
-  const ok = await reauthArchive()
-  notify(ok ? '存档目录已恢复同步' : '授权失败')
-}
-
-initArchive()
 onMounted(() => document.addEventListener('pointerdown', closeMenuOnOutsidePointer, true))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenuOnOutsidePointer, true))
 </script>

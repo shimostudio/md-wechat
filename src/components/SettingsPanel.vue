@@ -7,16 +7,13 @@
     :inert="!store.ui.settingsPanelOpen"
   >
     <div class="stabs">
-      <button class="stab" :class="{ active: tab === 'style' }" type="button" @click="tab = 'style'">样式</button>
-      <button class="stab" :class="{ active: tab === 'sticker' }" type="button" @click="tab = 'sticker'">贴纸</button>
       <div class="spacer"></div>
       <button class="panel-x" type="button" title="收起设置" @click="store.ui.settingsPanelOpen = false">
         <Icon name="x" :size="13" aria-hidden="true" />
       </button>
     </div>
 
-    <!-- 样式 Tab -->
-    <div v-show="tab === 'style'" class="spanel">
+    <div class="spanel">
       <div class="s-row">
         <div class="s-label">排版风格</div>
         <div class="s-display">{{ theme.name }}</div>
@@ -105,26 +102,6 @@
         </button>
       </div>
     </div>
-
-    <!-- 贴纸 Tab -->
-    <div v-show="tab === 'sticker'" class="spanel">
-      <div class="s-row">
-        <div class="s-label">标题贴纸（跟在二级标题后）</div>
-        <input
-          v-model.trim="store.settings.sticker"
-          class="s-select-input"
-          type="url"
-          inputmode="url"
-          placeholder="粘贴图床图片链接"
-          aria-label="标题贴纸图片地址"
-        />
-        <div v-if="store.settings.sticker" class="sticker-preview">
-          <span><img :src="store.settings.sticker" alt="当前标题贴纸预览" /></span>
-          <button class="text-button" type="button" @click="store.settings.sticker = ''">移除贴纸</button>
-        </div>
-        <div class="s-hint">只支持公网图片链接；粘贴进公众号时微信会自动转存图片，之后图床失效也不受影响。</div>
-      </div>
-    </div>
   </aside>
 </template>
 
@@ -135,7 +112,6 @@ import { store, theme, activeAccent, activeSlotColors, usedImageIds, notify } fr
 import { fontOptions, buildStyles } from '../lib/themes.js'
 import { listImages, pruneImages } from '../lib/imagedb.js'
 
-const tab = ref('style')
 const customOpen = ref(false)
 
 // ---- 图片存储统计与清理 ----

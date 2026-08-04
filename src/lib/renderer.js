@@ -110,7 +110,6 @@ function createMd(theme, opts) {
   const styles = buildStyles(theme, opts)
   const chrome = CODE_CHROME[theme.codeTheme] || CODE_CHROME.dark
   const macCode = !!opts.macCode
-  const sticker = opts.sticker ? String(opts.sticker).trim() : ''
   const galleryMode = normalizeGalleryMode(opts.galleryMode)
   const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
   md.use(markdownItMark) // ==高亮标记==
@@ -465,12 +464,7 @@ function createMd(theme, opts) {
   md.renderer.rules.heading_close = (tokens, idx) => {
     const level = Number(tokens[idx].tag.slice(1))
     const wrap = styles[`h${level}WrapClose`] || ''
-    // 标题贴纸：跟在二级标题后面的小图（小玩偶）
-    const deco =
-      level === 2 && sticker
-        ? `<img src="${esc(sticker)}" alt="" style="height:1.2em;width:auto;vertical-align:-0.2em;margin-left:0.4em;"/>`
-        : ''
-    return `${wrap}${deco}</h${level}>`
+    return `${wrap}</h${level}>`
   }
 
   md.renderer.rules.blockquote_open = (tokens, idx) => {
@@ -568,7 +562,6 @@ export function renderMarkdown(src, theme, opts = {}) {
     opts.fontSize || '',
     opts.fontFamily || '',
     opts.macCode ? 1 : 0,
-    opts.sticker || '',
     normalizeGalleryMode(opts.galleryMode),
     JSON.stringify(opts.custom || {}),
   ].join('|')

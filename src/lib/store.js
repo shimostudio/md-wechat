@@ -3,16 +3,6 @@ import { themes } from './themes.js'
 import { sample } from './sample.js'
 import { setImageResolver } from './renderer.js'
 import { getImageUrl, warmImageCache, pruneImages } from './imagedb.js'
-import {
-  archiveSupported,
-  restoreHandle,
-  pickDirectory,
-  requestPermission,
-  getActiveHandle,
-  writeDocFile,
-  removeDocFile,
-  scanMarkdown,
-} from './archive.js'
 
 const KEYS = {
   content: 'wmd-content',
@@ -91,7 +81,6 @@ function loadSettings() {
     previewWidth: 'full',
     editorPct: 50,
     viewMode: 'split',
-    sticker: '',
     galleryMode: 'collage',
     favoriteThemes: [],
     custom: {},
@@ -128,6 +117,8 @@ function loadSettings() {
     delete settings.customHost
     delete settings.customToken
   }
+  // 贴纸功能已下线
+  delete settings.sticker
   if (!settings.custom || typeof settings.custom !== 'object' || Array.isArray(settings.custom)) {
     settings.custom = {}
   } else if (savedVersion < 6) {
@@ -257,7 +248,6 @@ export const store = reactive({
   settings: loadSettings(),
   lastSavedAt: null,
   trash: load(KEYS.trash, []),
-  archive: { status: archiveSupported ? 'off' : 'unsupported', dirName: '' },
   // 面板开合（持久化）：三个面板均可独立开合；文档栏内部可切换文章与回收站视图。
   ui: (() => {
     const ui = Object.assign(
@@ -362,7 +352,6 @@ function persistDocs() {
   write(KEYS.docs, store.docs)
   write(KEYS.content, String(store.md ?? ''))
   store.lastSavedAt = Date.now()
-  if (doc) syncDocToArchive(doc)
 }
 
 export function createDocument(content = '# 未命名文章\n\n') {
@@ -389,16 +378,11 @@ export function renameDocument(id, title) {
   const doc = store.docs.find((d) => d.id === id)
   const clean = String(title || '').trim()
   if (!doc || !clean) return
-  const oldTitle = docTitle(doc.content)
   if (/^#\s+.+$/m.test(doc.content)) doc.content = doc.content.replace(/^#\s+.+$/m, `# ${clean}`)
   else doc.content = `# ${clean}\n\n${doc.content}`
   doc.updatedAt = Date.now()
   if (id === store.activeDocId) store.md = doc.content
   persistDocs()
-  if (archiveOn()) {
-    removeDocFile(getActiveHandle(), oldTitle).catch(() => {})
-    writeDocFile(getActiveHandle(), docTitle(doc.content), doc.content).catch(() => {})
-  }
 }
 
 // 删除进入回收站（最多保留 10 篇），可随时恢复
@@ -409,7 +393,6 @@ export function deleteDocument(id) {
   store.trash.unshift({ ...removed, deletedAt: Date.now() })
   if (store.trash.length > 10) store.trash.length = 10
   write(KEYS.trash, store.trash)
-  if (archiveOn()) removeDocFile(getActiveHandle(), docTitle(removed.content)).catch(() => {})
   if (!store.docs.length) {
     createDocument()
     return
@@ -457,77 +440,7 @@ export function importContents(list, { select = true } = {}) {
     write(KEYS.activeDoc, last.id)
   }
   persistDocs()
-  if (archiveOn()) {
-    docs.forEach((d) => writeDocFile(getActiveHandle(), docTitle(d.content), d.content).catch(() => {}))
-  }
   return docs
-}
-
-// ---------- 本地目录存档 ----------
-
-function archiveOn() {
-  return store.archive.status === 'on' && getActiveHandle()
-}
-
-let archiveSyncTimer = null
-function syncDocToArchive(doc) {
-  if (!archiveOn()) return
-  clearTimeout(archiveSyncTimer)
-  archiveSyncTimer = setTimeout(() => {
-    writeDocFile(getActiveHandle(), docTitle(doc.content), doc.content).catch(() => {})
-  }, 600)
-}
-
-export async function initArchive() {
-  if (!archiveSupported) {
-    store.archive.status = 'unsupported'
-    return
-  }
-  const { status, handle } = await restoreHandle()
-  store.archive.status = status
-  if (handle) store.archive.dirName = handle.name
-  if (status === 'on') await importArchiveFiles()
-}
-
-export async function enableArchive() {
-  if (!archiveSupported) return false
-  const handle = await pickDirectory()
-  store.archive.status = 'on'
-  store.archive.dirName = handle.name
-  await importArchiveFiles()
-  // 开启后把现有文章全量同步一次
-  for (const d of store.docs) {
-    await writeDocFile(handle, docTitle(d.content), d.content).catch(() => {})
-  }
-  return true
-}
-
-export async function reauthArchive() {
-  const { handle } = await restoreHandle()
-  if (!handle) {
-    store.archive.status = 'off'
-    return false
-  }
-  const ok = await requestPermission(handle)
-  if (ok) {
-    store.archive.status = 'on'
-    store.archive.dirName = handle.name
-    await importArchiveFiles()
-  }
-  return ok
-}
-
-async function importArchiveFiles() {
-  const handle = getActiveHandle()
-  if (!handle) return
-  try {
-    const files = await scanMarkdown(handle)
-    const existing = new Set(store.docs.map((d) => docTitle(d.content)))
-    const fresh = files.filter((f) => !existing.has(f.name.replace(/\.md$/i, '')))
-    if (fresh.length) importContents(fresh, { select: false })
-  } catch {
-    // 目录不可读时静默跳过，不影响本地文档
-  }
 }
 
 let contentTimer = null

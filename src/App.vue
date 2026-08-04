@@ -1,6 +1,6 @@
 <template>
   <div class="app-d">
-    <TopBar @import="importMd" @export="exportMd" @sync-folder="openDocuments" />
+    <TopBar @import="importMd" @export="exportMd" />
 
     <div class="d-body">
       <RailBar />

@@ -135,7 +135,6 @@ const previewHtml = computed(() =>
         fontFamily: 'theme',
         accent: null,
         macCode: false,
-        sticker: '',
         custom: {},
       }),
     ])
