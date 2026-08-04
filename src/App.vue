@@ -136,7 +136,7 @@ import { store, theme, notify, restoreDocument, createDocument, importContents }
 import { themes } from './lib/themes.js'
 import { renderMarkdown, stripPreviewMeta } from './lib/renderer.js'
 import { copyRichText, copyText } from './lib/clipboard.js'
-import { getImage, blobToDataUrl } from './lib/imagedb.js'
+import { getImage, blobToDataUrl, getCachedImageEntries } from './lib/imagedb.js'
 import { sample, samples } from './lib/sample.js'
 
 const editorRef = ref(null)
@@ -402,12 +402,13 @@ async function doCopy() {
   notify(ok ? '排版已复制，可以去公众号后台粘贴了' : '复制失败，请手动全选预览内容')
 }
 
-// 把 HTML 里的 local: 图片引用还原成 data URI（公众号粘贴需要真实图片数据）
+// 把 HTML 里的 blob: 图片链接还原成 data URI（公众号无法读取 blob: 链接，
+// 粘贴时需要真实图片数据）
 async function inlineLocalImages(htmlText) {
-  const ids = [...new Set([...htmlText.matchAll(/local:(img-[a-z0-9]+)/g)].map((m) => m[1]))]
-  for (const id of ids) {
+  for (const [id, url] of getCachedImageEntries()) {
+    if (!htmlText.includes(url)) continue
     const blob = await getImage(id)
-    if (blob) htmlText = htmlText.split(`local:${id}`).join(await blobToDataUrl(blob))
+    if (blob) htmlText = htmlText.split(url).join(await blobToDataUrl(blob))
   }
   return htmlText
 }

@@ -58,6 +58,11 @@ export function getImageUrl(id) {
   return objectUrls.get(id) || null
 }
 
+// 缓存条目（id 与 objectURL 互查），复制时按 URL 反查图片用
+export function getCachedImageEntries() {
+  return [...objectUrls.entries()]
+}
+
 // 启动时把库存图片预热进内存缓存
 export async function warmImageCache() {
   try {
