@@ -5,7 +5,7 @@
 
 cd "$(dirname "$0")" || exit 1
 
-NODE_VERSION="v20.11.1"
+NODE_VERSION="v22.14.0"
 RUNTIME_DIR=".node-runtime"
 
 echo "======================================"

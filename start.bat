@@ -8,7 +8,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 title 字间排版 · 一键启动
 
-set NODE_VERSION=v20.11.1
+set NODE_VERSION=v22.14.0
 set RUNTIME_DIR=.node-runtime
 set NODE_DIR=%RUNTIME_DIR%\node-%NODE_VERSION%-win-x64
 
