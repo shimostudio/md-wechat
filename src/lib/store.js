@@ -2,7 +2,8 @@ import { reactive, computed, watch } from 'vue'
 import { themes } from './themes.js'
 import { sample } from './sample.js'
 import { setImageResolver } from './renderer.js'
-import { getImageUrl, warmImageCache, pruneImages } from './imagedb.js'
+import { getImageUrl, warmImageCache, pruneImages, getImage } from './imagedb.js'
+import { getImageHost } from './imagehost.js'
 
 const KEYS = {
   content: 'wmd-content',
@@ -84,6 +85,7 @@ function loadSettings() {
     galleryMode: 'collage',
     favoriteThemes: [],
     custom: {},
+    imageHost: { provider: '', config: {}, always: 'off' },
     v: SETTINGS_VERSION,
   }
   const saved = load(KEYS.settings, null)
@@ -119,6 +121,18 @@ function loadSettings() {
   }
   // 贴纸功能已下线
   delete settings.sticker
+  // 图床配置（可选）：provider 为空表示不使用
+  if (!settings.imageHost || typeof settings.imageHost !== 'object' || Array.isArray(settings.imageHost)) {
+    settings.imageHost = { provider: '', config: {}, always: 'off' }
+  } else {
+    if (!settings.imageHost.config || typeof settings.imageHost.config !== 'object') {
+      settings.imageHost.config = {}
+    }
+    if (!['off', 'image', 'video', 'both'].includes(settings.imageHost.always)) {
+      settings.imageHost.always = 'off'
+    }
+    if (typeof settings.imageHost.provider !== 'string') settings.imageHost.provider = ''
+  }
   if (!settings.custom || typeof settings.custom !== 'object' || Array.isArray(settings.custom)) {
     settings.custom = {}
   } else if (savedVersion < 6) {
@@ -285,6 +299,60 @@ export function usedImageIds() {
   for (const d of store.trash) scan(d.content)
   scan(store.backupMd)
   return [...ids]
+}
+
+// ---------- 图床（可选） ----------
+
+export function imageHostReady() {
+  return !!store.settings.imageHost?.provider
+}
+
+// 粘贴媒体时是否应自动上传（kind: 'image' | 'video'）
+export function shouldAutoUpload(kind) {
+  if (!imageHostReady()) return false
+  const always = store.settings.imageHost.always
+  return always === 'both' || always === kind
+}
+
+// 上传一个 Blob 到已配置的图床，返回公网 URL
+export async function uploadBlobToHost(blob, filename) {
+  const host = getImageHost(store.settings.imageHost?.provider)
+  if (!host) throw new Error('未配置图床')
+  return host.upload(blob, store.settings.imageHost.config || {}, filename)
+}
+
+// 把指定文档里某一类本地媒体（图片或视频）全部上传到图床并替换为公网链接
+export async function uploadDocMedia(docId, kind) {
+  const doc = store.docs.find((d) => d.id === docId)
+  if (!doc) return { done: 0, failed: 0, total: 0 }
+  const isVideo = kind === 'video'
+  const re = isVideo ? /local:(vid-[a-z0-9]+)/g : /local:(img-[a-z0-9]+)/g
+  const ids = [...new Set([...doc.content.matchAll(re)].map((m) => m[1]))]
+  let done = 0
+  let failed = 0
+  for (const id of ids) {
+    try {
+      const blob = await getImage(id)
+      if (!blob) {
+        failed += 1
+        continue
+      }
+      const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'bin'
+      const url = await uploadBlobToHost(blob, `${id}.${ext}`)
+      doc.content = doc.content.split(`local:${id}`).join(url)
+      done += 1
+    } catch {
+      failed += 1
+    }
+  }
+  if (done) {
+    doc.updatedAt = Date.now()
+    if (doc.id === store.activeDocId) store.md = doc.content
+    persistDocs()
+    // 替换后本地字节已成孤儿，顺手清掉
+    await pruneImages(usedImageIds()).catch(() => {})
+  }
+  return { done, failed, total: ids.length }
 }
 
 export const theme = computed(() => themes.find((t) => t.id === store.themeId) || themes[0])

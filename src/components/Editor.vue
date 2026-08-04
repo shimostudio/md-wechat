@@ -8,8 +8,18 @@ import { EditorView, basicSetup } from 'codemirror'
 import { placeholder, ViewPlugin, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
-import { notify } from '../lib/store.js'
+import { store, notify, shouldAutoUpload, uploadBlobToHost } from '../lib/store.js'
 import { putImage, cacheImage } from '../lib/imagedb.js'
+
+// 首次粘贴媒体时把建议和成功提示合并成一条（持久化标记，建议只出现一次）
+function mediaNotify(baseMsg) {
+  if (store.settings.mediaHintSeen) {
+    notify(baseMsg)
+    return
+  }
+  store.settings.mediaHintSeen = true
+  notify(`${baseMsg}。媒体会随复制一起带走：图片 ≤2MB、视频 ≤100MB，过大请先压缩`)
+}
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -174,13 +184,25 @@ async function insertImageFile(file) {
   if (!view) return
   try {
     const blob = await compressImage(file)
+    if (shouldAutoUpload('image')) {
+      try {
+        const url = await uploadBlobToHost(blob, `paste-${Date.now().toString(36)}.jpg`)
+        const { from, to } = view.state.selection.main
+        const insert = `![粘贴的图片](${url})`
+        view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+        mediaNotify('已上传图床并插入链接')
+        return
+      } catch {
+        notify('图床上传失败，已改为本地存储')
+      }
+    }
     const id = `img-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     await putImage(id, blob)
     cacheImage(id, blob)
     const { from, to } = view.state.selection.main
     const insert = `![粘贴的图片](local:${id})`
     view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
-    notify('已插入图片，复制到公众号时可正常使用')
+    mediaNotify('已插入图片，复制到公众号时可正常使用')
   } catch {
     notify('图片读取失败，请重试')
   }
@@ -192,17 +214,30 @@ const IMAGE_URL = /^https?:\/\/\S+?\.(?:png|jpe?g|gif|webp|svg|bmp|avif)(?:\?\S*
 async function insertVideoFile(file) {
   if (!view) return
   if (file.size > 100 * 1024 * 1024) {
-    notify('视频超过 100MB，请直接在公众号后台插入')
+    notify('视频超过 100MB，请压缩后再粘贴（或直接在公众号后台插入）')
     return
   }
   try {
+    if (shouldAutoUpload('video')) {
+      try {
+        const ext = file.type.split('/')[1] || 'mp4'
+        const url = await uploadBlobToHost(file, `paste-${Date.now().toString(36)}.${ext}`)
+        const { from, to } = view.state.selection.main
+        const insert = `\n\n<video src="${url}"></video>\n\n`
+        view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+        mediaNotify('已上传图床并插入链接')
+        return
+      } catch {
+        notify('图床上传失败，已改为本地存储')
+      }
+    }
     const id = `vid-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     await putImage(id, file)
     cacheImage(id, file)
     const { from, to } = view.state.selection.main
     const insert = `\n\n<video src="local:${id}"></video>\n\n`
     view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
-    notify('已插入视频（本地可预览）；发布时需在公众号后台插入')
+    mediaNotify('已插入视频，本地可预览；复制后可去公众号测试效果')
   } catch {
     notify('视频读取失败，请重试')
   }

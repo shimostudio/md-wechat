@@ -35,6 +35,25 @@
       <Icon name="copy" :size="14" aria-hidden="true" /> 复制富文本
     </button>
 
+    <div v-if="hostReady" class="pmenu-wrap">
+      <button class="pio" type="button" :class="{ open: upOpen }" @click="upOpen = !upOpen">
+        <Icon name="upload" :size="14" aria-hidden="true" /> 上传到图床
+      </button>
+      <div v-if="upOpen" class="pmenu-backdrop" @click="upOpen = false"></div>
+      <Transition name="pop">
+        <div v-if="upOpen" class="pmenu">
+          <button class="menu-item" type="button" :disabled="uploading" @click="uploadAll('image')">
+            <span class="menu-icon"><Icon name="image" :size="15" aria-hidden="true" /></span>
+            <span class="menu-item-copy"><strong>上传全部图片</strong><small>本文本地图片一键替换为公网链接</small></span>
+          </button>
+          <button class="menu-item" type="button" :disabled="uploading" @click="uploadAll('video')">
+            <span class="menu-icon"><Icon name="file-code" :size="15" aria-hidden="true" /></span>
+            <span class="menu-item-copy"><strong>上传全部视频</strong><small>本文本地视频一键替换为公网链接</small></span>
+          </button>
+        </div>
+      </Transition>
+    </div>
+
     <div class="pmenu-wrap">
       <button class="pio" type="button" :class="{ open: ioOpen }" @click="ioOpen = !ioOpen">
         <Icon name="upload" :size="14" aria-hidden="true" /> 导入 / 导出
@@ -110,7 +129,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
-import { store } from '../lib/store.js'
+import { store, imageHostReady, uploadDocMedia, notify } from '../lib/store.js'
 import { samples } from '../lib/sample.js'
 
 const props = defineProps({
@@ -125,6 +144,25 @@ const ioOpen = ref(false)
 function actIo(name) {
   ioOpen.value = false
   emit(name)
+}
+
+// ---- 上传到图床 ----
+const hostReady = computed(() => imageHostReady())
+const upOpen = ref(false)
+const uploading = ref(false)
+
+async function uploadAll(kind) {
+  upOpen.value = false
+  uploading.value = true
+  try {
+    const label = kind === 'video' ? '视频' : '图片'
+    const { done, failed, total } = await uploadDocMedia(store.activeDocId, kind)
+    if (!total) notify(`本文没有本地${label}`)
+    else if (failed) notify(`上传完成：${done} 成功，${failed} 失败`)
+    else notify(`已上传 ${done} 个${label}，链接已替换为公网地址`)
+  } finally {
+    uploading.value = false
+  }
 }
 
 const views = [

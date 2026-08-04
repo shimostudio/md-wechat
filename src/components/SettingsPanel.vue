@@ -92,14 +92,50 @@
       <div class="s-divider"></div>
 
       <div class="s-row">
-        <div class="s-label">图片存储</div>
+        <div class="s-label">资源存储</div>
         <div class="s-display">{{ imageStatsText }}</div>
         <div class="s-hint">
-          粘贴的图片只保存在本浏览器（IndexedDB），启动时会自动清理没有被任何文章引用的图片；回收站里的文章引用会被保留。
+          粘贴的图片和视频只保存在本浏览器（IndexedDB），启动时会自动清理没有被任何文章引用的文件；回收站里的文章引用会被保留。
+        </div>
+        <div class="s-hint">
+          复制时媒体会以文本（base64）随内容带走，体积会放大约 1.3 倍，按所有媒体的总字节数计算：图片建议单张不超过 2MB，视频不超过 100MB；总大小过大可能导致复制卡顿或公众号粘贴失败，建议先压缩再粘贴。
         </div>
         <button class="text-button" type="button" :disabled="cleaningImages" @click="cleanImages">
-          {{ cleaningImages ? '清理中…' : '立即清理未使用的图片' }}
+          {{ cleaningImages ? '清理中…' : '立即清理未使用的文件' }}
         </button>
+      </div>
+
+      <div class="s-divider"></div>
+
+      <div class="s-row">
+        <div class="s-label">图床（可选）</div>
+        <select v-model="store.settings.imageHost.provider" class="s-select-input" aria-label="图床供应商">
+          <option value="">不使用</option>
+          <option v-for="h in IMAGE_HOSTS" :key="h.id" :value="h.id">{{ h.name }}</option>
+        </select>
+        <template v-if="activeHost">
+          <div v-for="f in activeHost.fields" :key="f.key">
+            <div class="s-hint">{{ f.label }}</div>
+            <input
+              v-model="store.settings.imageHost.config[f.key]"
+              class="s-select-input"
+              :type="f.secret ? 'password' : 'text'"
+              :placeholder="f.placeholder"
+              :aria-label="f.label"
+            />
+          </div>
+          <div class="s-hint">凭据只保存在本浏览器，不会经过任何其他服务器。</div>
+          <div class="s-label">粘贴时自动上传</div>
+          <div class="s-seg">
+            <button type="button" :class="{ active: alwaysMode === 'off' }" @click="setAlways('off')">关闭</button>
+            <button type="button" :class="{ active: alwaysMode === 'image' }" @click="setAlways('image')">仅图片</button>
+            <button type="button" :class="{ active: alwaysMode === 'video' }" @click="setAlways('video')">仅视频</button>
+            <button type="button" :class="{ active: alwaysMode === 'both' }" @click="setAlways('both')">图片+视频</button>
+          </div>
+          <div class="s-hint">
+            开启后粘贴的媒体直接上传图床并插入公网链接；失败时自动回落为本地存储。已粘贴到本文的本地媒体，可在预览工具条点「上传到图床」一键替换为公网链接。
+          </div>
+        </template>
       </div>
     </div>
   </aside>
@@ -111,8 +147,16 @@ import Icon from './Icon.vue'
 import { store, theme, activeAccent, activeSlotColors, usedImageIds, notify } from '../lib/store.js'
 import { fontOptions, buildStyles } from '../lib/themes.js'
 import { listImages, pruneImages } from '../lib/imagedb.js'
+import { IMAGE_HOSTS } from '../lib/imagehost.js'
 
 const customOpen = ref(false)
+
+// ---- 图床 ----
+const activeHost = computed(() => IMAGE_HOSTS.find((h) => h.id === store.settings.imageHost.provider) || null)
+const alwaysMode = computed(() => store.settings.imageHost.always)
+function setAlways(value) {
+  store.settings.imageHost.always = value
+}
 
 // ---- 图片存储统计与清理 ----
 const imageStatsText = ref('统计中…')
@@ -125,7 +169,7 @@ async function refreshImageStats() {
   try {
     const items = await listImages()
     const total = items.reduce((sum, item) => sum + item.size, 0)
-    imageStatsText.value = items.length ? `${items.length} 张图片 · ${formatSize(total)}` : '暂无图片'
+    imageStatsText.value = items.length ? `${items.length} 个文件 · ${formatSize(total)}` : '暂无文件'
   } catch {
     imageStatsText.value = '无法读取'
   }
@@ -135,7 +179,7 @@ async function cleanImages() {
   cleaningImages.value = true
   try {
     const { removed, freed } = await pruneImages(usedImageIds())
-    notify(removed ? `已清理 ${removed} 张未使用图片，释放 ${formatSize(freed)}` : '没有可清理的图片')
+    notify(removed ? `已清理 ${removed} 个未使用文件，释放 ${formatSize(freed)}` : '没有可清理的文件')
     await refreshImageStats()
   } catch {
     notify('清理失败，请重试')

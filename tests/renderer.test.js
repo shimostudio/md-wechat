@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { renderMarkdown, stripPreviewMeta, setImageResolver } from '../src/lib/renderer.js'
 import { buildStyles, themes } from '../src/lib/themes.js'
+import { extractUrl } from '../src/lib/imagehost.js'
 
 const galleryMarkdown = `# 多图测试
 
@@ -256,4 +257,11 @@ test('local: 视频渲染为本地播放器并带复制替换标记', () => {
   assert.match(html, /<video src="blob:mock-video" controls/)
   assert.doesNotMatch(html, /视频占位/)
   setImageResolver(null)
+})
+
+test('图床响应 URL 按路径提取', () => {
+  assert.equal(extractUrl({ url: 'https://a.com/x.jpg' }, 'url'), 'https://a.com/x.jpg')
+  assert.equal(extractUrl({ data: { link: 'https://a.com/y.jpg' } }, 'data.link'), 'https://a.com/y.jpg')
+  assert.equal(extractUrl({ data: {} }, 'data.link'), null)
+  assert.equal(extractUrl({ url: 'not-a-url' }, 'url'), null)
 })

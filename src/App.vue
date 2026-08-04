@@ -136,10 +136,9 @@ import Toolbar from './components/Toolbar.vue'
 import Editor from './components/Editor.vue'
 import { store, theme, notify, restoreDocument, createDocument, importContents } from './lib/store.js'
 import { themes } from './lib/themes.js'
-import { renderMarkdown, stripPreviewMeta, buildVideoPlaceholder } from './lib/renderer.js'
+import { renderMarkdown, stripPreviewMeta } from './lib/renderer.js'
 import { copyRichText, copyText } from './lib/clipboard.js'
 import { getImage, blobToDataUrl, getCachedImageEntries } from './lib/imagedb.js'
-import { buildStyles } from './lib/themes.js'
 import { sample, samples } from './lib/sample.js'
 
 const editorRef = ref(null)
@@ -405,25 +404,14 @@ async function doCopy() {
   notify(ok ? '排版已复制，可以去公众号后台粘贴了' : '复制失败，请手动全选预览内容')
 }
 
-// 把 HTML 里图片的 blob: 链接还原成 data URI（公众号无法读取 blob: 链接，
-// 粘贴时需要真实图片数据）；视频不内联（体积大），本地视频块统一转为占位卡。
+// 把 HTML 里图片、视频的 blob: 链接统一还原成 data URI
+// （公众号无法读取 blob: 链接，粘贴时需要真实媒体数据）
 async function inlineLocalImages(htmlText) {
   for (const [id, url] of getCachedImageEntries()) {
     if (!htmlText.includes(url)) continue
     const blob = await getImage(id)
-    if (!blob || blob.type.startsWith('video/')) continue
+    if (!blob) continue
     htmlText = htmlText.split(url).join(await blobToDataUrl(blob))
-  }
-  if (htmlText.includes('data-lv="1"')) {
-    const videoStyle = buildStyles(renderTheme.value, {
-      ...store.settings,
-      accent: store.settings.accentByTheme?.[renderTheme.value.id] || null,
-      slotColors: store.settings.accentSlotsByTheme?.[renderTheme.value.id] || null,
-    }).video
-    htmlText = htmlText.replace(
-      /<section[^>]*data-lv="1"[^>]*>[\s\S]*?<\/section>/g,
-      buildVideoPlaceholder(videoStyle, { note: '本地视频文件' })
-    )
   }
   return htmlText
 }

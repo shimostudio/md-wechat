@@ -211,7 +211,7 @@ function createMd(theme, opts) {
         const line = t[i].map ? ` data-line="${t[i].map[0]}"` : ''
         tok.content = `<section${line} data-lv="1" style="${escapeHtmlAttr(
           styles.video
-        )}"><video src="${esc(realUrl)}" controls preload="metadata" style="display:block;width:100%;border-radius:8px;margin:0 auto;"></video><p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">本地视频预览；复制到公众号时会转为占位卡</p></section>`
+        )}"><video src="${esc(realUrl)}" controls preload="metadata" style="display:block;width:100%;border-radius:8px;margin:0 auto;"></video><p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">本地视频预览</p></section>`
       } else {
         tok.content = videoPlaceholder(url, t[i].map)
       }
