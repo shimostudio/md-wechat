@@ -3687,24 +3687,23 @@ body {
 }
 
 .qhint-pop {
-  position: absolute;
-  top: calc(100% + 7px);
-  right: -6px;
-  z-index: 70;
-  width: 232px;
-  padding: 9px 11px;
-  color: var(--ink-2);
+  position: fixed;
+  z-index: 90;
+  padding: 12px 14px;
+  color: var(--ink);
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(60, 50, 30, 0.14);
-  font-size: 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(60, 50, 30, 0.2);
+  font-size: 12.5px;
   font-weight: 400;
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
-/* 设置面板在屏幕右侧，浮窗一律向左展开，避免溢出屏幕 */
+/* 设置面板在屏幕右侧，头部与预览工具条同高，底部分隔线连成一条 */
 .settings-panel .panel-head {
+  height: 46px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--line);
 }
 

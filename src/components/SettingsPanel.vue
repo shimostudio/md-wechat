@@ -95,10 +95,7 @@
         <div class="s-label">
           资源存储
           <span class="qhint">
-            <button class="qhint-btn" type="button" aria-label="资源存储说明" :aria-expanded="hintFor === 'storage'" @click.stop="toggleHint('storage')">?</button>
-            <span v-if="hintFor === 'storage'" class="qhint-pop" role="tooltip">
-              媒体只存在本浏览器，不再被引用的文件会自动清理（回收站引用保留）。复制时媒体按总字节 ×1.3 转文本带走：图片建议 ≤2MB、视频 ≤100MB，总大小过大可能复制卡顿或粘贴失败，建议先压缩。
-            </span>
+            <button class="qhint-btn" type="button" aria-label="资源存储说明" :aria-expanded="hintFor === 'storage'" @click.stop="toggleHint('storage', $event)">?</button>
           </span>
         </div>
         <div class="s-display">{{ imageStatsText }}</div>
@@ -113,10 +110,7 @@
         <div class="s-label">
           图床（可选）
           <span class="qhint">
-            <button class="qhint-btn" type="button" aria-label="图床说明" :aria-expanded="hintFor === 'host'" @click.stop="toggleHint('host')">?</button>
-            <span v-if="hintFor === 'host'" class="qhint-pop" role="tooltip">
-              凭据只保存在本浏览器。上传后媒体引用会替换为公网链接，不再受复制体积限制，适合大图与大视频。
-            </span>
+            <button class="qhint-btn" type="button" aria-label="图床说明" :aria-expanded="hintFor === 'host'" @click.stop="toggleHint('host', $event)">?</button>
           </span>
         </div>
         <select v-model="store.settings.imageHost.provider" class="s-select-input" aria-label="图床供应商">
@@ -137,10 +131,7 @@
           <div class="s-label">
             粘贴时自动上传
             <span class="qhint">
-              <button class="qhint-btn" type="button" aria-label="自动上传说明" :aria-expanded="hintFor === 'always'" @click.stop="toggleHint('always')">?</button>
-              <span v-if="hintFor === 'always'" class="qhint-pop" role="tooltip">
-                开启后粘贴即上传并插入公网链接，失败回落本地。已有本地媒体可在预览工具条点「上传到图床」一键替换。
-              </span>
+              <button class="qhint-btn" type="button" aria-label="自动上传说明" :aria-expanded="hintFor === 'always'" @click.stop="toggleHint('always', $event)">?</button>
             </span>
           </div>
           <div class="s-seg">
@@ -152,6 +143,12 @@
         </template>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="hintFor" class="qhint-pop" role="tooltip" :style="hintPopPos" @click.stop>
+        {{ hintText }}
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -167,12 +164,38 @@ const customOpen = ref(false)
 
 // ---- ⓘ 气泡说明 ----
 const hintFor = ref(null)
-function toggleHint(key) {
-  hintFor.value = hintFor.value === key ? null : key
+const hintPopPos = ref({ left: '0px', top: '0px', width: '280px' })
+const HINTS = {
+  storage:
+    '媒体只存在本浏览器，不再被引用的文件会自动清理（回收站引用保留）。复制时媒体按总字节 ×1.3 转文本带走：图片建议 ≤2MB、视频 ≤100MB，总大小过大可能复制卡顿或粘贴失败，建议先压缩。',
+  host: '凭据只保存在本浏览器。上传后媒体引用会替换为公网链接，不再受复制体积限制，适合大图与大视频。',
+  always:
+    '开启后粘贴即上传并插入公网链接，失败回落本地。已有本地媒体可在预览工具条点「上传到图床」一键替换。',
+}
+const hintText = computed(() => HINTS[hintFor.value] || '')
+
+function toggleHint(key, event) {
+  if (hintFor.value === key) {
+    hintFor.value = null
+    return
+  }
+  // 浮窗传送到 body 固定定位：以问号为中心，钳制在视口内；下方空间不足时向上展开
+  const rect = event.currentTarget.getBoundingClientRect()
+  const width = 280
+  const left = Math.max(12, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 12))
+  const estimatedH = 130
+  const openBelow = rect.bottom + 8 + estimatedH <= window.innerHeight
+  hintPopPos.value = {
+    left: `${left}px`,
+    top: openBelow ? `${rect.bottom + 8}px` : `${rect.top - 8}px`,
+    width: `${width}px`,
+    transform: openBelow ? 'none' : 'translateY(-100%)',
+  }
+  hintFor.value = key
 }
 function closeHintOnOutside(event) {
   if (!hintFor.value) return
-  if (event.target instanceof Element && event.target.closest('.qhint')) return
+  if (event.target instanceof Element && event.target.closest('.qhint, .qhint-pop')) return
   hintFor.value = null
 }
 onMounted(() => document.addEventListener('pointerdown', closeHintOnOutside, true))
