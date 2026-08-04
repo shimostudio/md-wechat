@@ -14,13 +14,13 @@
       <a href="https://github.com/laogou717/md-wechat" target="_blank" rel="noopener noreferrer" title="GitHub 仓库">
         <Icon name="github" :size="16" aria-hidden="true" />
       </a>
-      <a href="https://example.com/buy-me-a-coffee" target="_blank" rel="noopener noreferrer" title="请我喝咖啡">
+      <a href="https://raw.githubusercontent.com/JonasTech0/Jonas-imgs-240211/main/imagesIMG_2767.png" target="_blank" rel="noopener noreferrer" title="请我喝咖啡">
         <Icon name="coffee" :size="16" aria-hidden="true" />
       </a>
-      <a href="https://x.com/yourname" target="_blank" rel="noopener noreferrer" title="X（Twitter）">
+      <a href="https://x.com/shenfanlaogou" target="_blank" rel="noopener noreferrer" title="X（Twitter）">
         <Icon name="xlogo" :size="14" aria-hidden="true" />
       </a>
-      <a href="https://space.bilibili.com/yourname" target="_blank" rel="noopener noreferrer" title="B站">
+      <a href="https://space.bilibili.com/46377861" target="_blank" rel="noopener noreferrer" title="B站">
         <Icon name="bilibili" :size="16" aria-hidden="true" />
       </a>
     </nav>
