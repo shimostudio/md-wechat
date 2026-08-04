@@ -39,16 +39,6 @@
       <Icon name="trash" :size="18" aria-hidden="true" />
       <span v-if="store.trash.length" class="badge">{{ store.trash.length }}</span>
     </button>
-    <a
-      class="rail-btn rail-github"
-      href="https://github.com/laogou717/md-wechat"
-      target="_blank"
-      rel="noopener noreferrer"
-      title="GitHub 仓库"
-      aria-label="GitHub 仓库"
-    >
-      <Icon name="github" :size="18" aria-hidden="true" />
-    </a>
   </nav>
 </template>
 

@@ -3022,14 +3022,6 @@ body {
   margin: 4px 0;
 }
 
-.rail-github {
-  margin-top: auto;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 /* ---------- 文档抽屉 ---------- */
 .left-panels {
   display: flex;
