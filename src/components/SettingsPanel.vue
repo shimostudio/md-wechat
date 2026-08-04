@@ -94,12 +94,8 @@
       <div class="s-row">
         <div class="s-label">资源存储</div>
         <div class="s-display">{{ imageStatsText }}</div>
-        <div class="s-hint">
-          粘贴的图片和视频只保存在本浏览器（IndexedDB），启动时会自动清理没有被任何文章引用的文件；回收站里的文章引用会被保留。
-        </div>
-        <div class="s-hint">
-          复制时媒体会以文本（base64）随内容带走，体积会放大约 1.3 倍，按所有媒体的总字节数计算：图片建议单张不超过 2MB，视频不超过 100MB；总大小过大可能导致复制卡顿或公众号粘贴失败，建议先压缩再粘贴。
-        </div>
+        <div class="s-hint">媒体只存在本浏览器；不再被引用的文件会自动清理（回收站引用保留）。</div>
+        <div class="s-hint">复制时媒体按总字节 ×1.3 转文本带走：图片建议 ≤2MB、视频 ≤100MB，过大请先压缩。</div>
         <button class="text-button" type="button" :disabled="cleaningImages" @click="cleanImages">
           {{ cleaningImages ? '清理中…' : '立即清理未使用的文件' }}
         </button>
@@ -124,7 +120,7 @@
               :aria-label="f.label"
             />
           </div>
-          <div class="s-hint">凭据只保存在本浏览器，不会经过任何其他服务器。</div>
+          <div class="s-hint">凭据只保存在本浏览器。</div>
           <div class="s-label">粘贴时自动上传</div>
           <div class="s-seg">
             <button type="button" :class="{ active: alwaysMode === 'off' }" @click="setAlways('off')">关闭</button>
@@ -132,9 +128,7 @@
             <button type="button" :class="{ active: alwaysMode === 'video' }" @click="setAlways('video')">仅视频</button>
             <button type="button" :class="{ active: alwaysMode === 'both' }" @click="setAlways('both')">图片+视频</button>
           </div>
-          <div class="s-hint">
-            开启后粘贴的媒体直接上传图床并插入公网链接；失败时自动回落为本地存储。已粘贴到本文的本地媒体，可在预览工具条点「上传到图床」一键替换为公网链接。
-          </div>
+          <div class="s-hint">开启后粘贴即上传并插入公网链接，失败回落本地。已有本地媒体可在工具条点「上传到图床」。</div>
         </template>
       </div>
     </div>

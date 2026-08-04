@@ -3702,10 +3702,10 @@ body {
 }
 
 .s-hint {
-  font-size: 10px;
-  color: var(--ink-3);
+  font-size: 11px;
+  color: var(--ink-2);
   margin-top: 6px;
-  line-height: 1.5;
+  line-height: 1.65;
 }
 
 .s-select {

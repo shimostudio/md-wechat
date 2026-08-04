@@ -29,30 +29,6 @@ export const IMAGE_HOSTS = [
     },
   },
   {
-    id: 'custom',
-    name: '自定义接口',
-    fields: [
-      { key: 'endpoint', label: '接口地址', placeholder: 'https://example.com/api/upload' },
-      { key: 'token', label: 'Token（可选）', secret: true, placeholder: 'Bearer Token，可留空' },
-      { key: 'field', label: '文件字段名', placeholder: '默认 file' },
-      { key: 'urlPath', label: '返回 URL 字段', placeholder: '默认 url；嵌套写法如 data.url' },
-    ],
-    async upload(blob, config, filename) {
-      if (!config.endpoint) throw new Error('未填写接口地址')
-      const form = new FormData()
-      form.append(config.field || 'file', blob, filename)
-      const headers = {}
-      if (config.token) {
-        headers.Authorization = /^Bearer /i.test(config.token) ? config.token : `Bearer ${config.token}`
-      }
-      const res = await fetch(config.endpoint, { method: 'POST', headers, body: form })
-      if (!res.ok) throw new Error(`接口返回 HTTP ${res.status}`)
-      const url = extractUrl(await res.json(), config.urlPath || 'url')
-      if (!url) throw new Error('响应中未找到图片 URL，请检查「返回 URL 字段」')
-      return url
-    },
-  },
-  {
     id: 'github',
     name: 'GitHub',
     fields: [
@@ -74,6 +50,30 @@ export const IMAGE_HOSTS = [
       })
       if (!res.ok) throw new Error(`GitHub 返回 HTTP ${res.status}`)
       return `https://cdn.jsdelivr.net/gh/${config.repo}@${branch}/${path}`
+    },
+  },
+  {
+    id: 'custom',
+    name: '自定义接口',
+    fields: [
+      { key: 'endpoint', label: '接口地址', placeholder: 'https://example.com/api/upload' },
+      { key: 'token', label: 'Token（可选）', secret: true, placeholder: 'Bearer Token，可留空' },
+      { key: 'field', label: '文件字段名', placeholder: '默认 file' },
+      { key: 'urlPath', label: '返回 URL 字段', placeholder: '默认 url；嵌套写法如 data.url' },
+    ],
+    async upload(blob, config, filename) {
+      if (!config.endpoint) throw new Error('未填写接口地址')
+      const form = new FormData()
+      form.append(config.field || 'file', blob, filename)
+      const headers = {}
+      if (config.token) {
+        headers.Authorization = /^Bearer /i.test(config.token) ? config.token : `Bearer ${config.token}`
+      }
+      const res = await fetch(config.endpoint, { method: 'POST', headers, body: form })
+      if (!res.ok) throw new Error(`接口返回 HTTP ${res.status}`)
+      const url = extractUrl(await res.json(), config.urlPath || 'url')
+      if (!url) throw new Error('响应中未找到图片 URL，请检查「返回 URL 字段」')
+      return url
     },
   },
 ]
