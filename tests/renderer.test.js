@@ -248,3 +248,12 @@ test('local: 图片引用经解析器替换，未注册时降级为空 src', () 
   assert.match(resolved, /src="blob:mock-url"/)
   setImageResolver(null)
 })
+
+test('local: 视频渲染为本地播放器并带复制替换标记', () => {
+  setImageResolver((src) => (src === 'local:vid-x1' ? 'blob:mock-video' : null))
+  const html = renderMarkdown('<video src="local:vid-x1"></video>', themes[0], {})
+  assert.match(html, /data-lv="1"/)
+  assert.match(html, /<video src="blob:mock-video" controls/)
+  assert.doesNotMatch(html, /视频占位/)
+  setImageResolver(null)
+})

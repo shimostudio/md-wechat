@@ -11,6 +11,9 @@
     <div class="spacer"></div>
 
     <nav class="tb-social" aria-label="相关链接">
+      <a href="https://www.laogou717.com" target="_blank" rel="noopener noreferrer" title="我的博客">
+        <Icon name="blog" :size="16" aria-hidden="true" />
+      </a>
       <a href="https://github.com/laogou717/md-wechat" target="_blank" rel="noopener noreferrer" title="GitHub 仓库">
         <Icon name="github" :size="16" aria-hidden="true" />
       </a>

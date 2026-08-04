@@ -189,6 +189,25 @@ async function insertImageFile(file) {
 // 图片直链：粘贴时自动包成 Markdown 图片语法
 const IMAGE_URL = /^https?:\/\/\S+?\.(?:png|jpe?g|gif|webp|svg|bmp|avif)(?:\?\S*)?$/i
 
+async function insertVideoFile(file) {
+  if (!view) return
+  if (file.size > 100 * 1024 * 1024) {
+    notify('视频超过 100MB，请直接在公众号后台插入')
+    return
+  }
+  try {
+    const id = `vid-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    await putImage(id, file)
+    cacheImage(id, file)
+    const { from, to } = view.state.selection.main
+    const insert = `\n\n<video src="local:${id}"></video>\n\n`
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+    notify('已插入视频（本地可预览）；发布时需在公众号后台插入')
+  } catch {
+    notify('视频读取失败，请重试')
+  }
+}
+
 // ---- 本地图片（data URI）在编辑器里折叠为卡片 ----
 // 文档里保留完整 data URI（复制到公众号可直接用），
 // 编辑器视图上替换成一张小卡片，避免整屏 base64。
@@ -248,6 +267,18 @@ function onPaste(event) {
   if (imageFile) {
     event.preventDefault()
     insertImageFile(imageFile)
+    return true
+  }
+  const videoFile = files.find((f) => f.type.startsWith('video/'))
+  if (videoFile) {
+    event.preventDefault()
+    insertVideoFile(videoFile)
+    return true
+  }
+  if (files.length) {
+    // 其他文件格式（PDF、ZIP 等）：明确告知，而不是静默无反应
+    event.preventDefault()
+    notify('暂不支持粘贴该格式；图片、视频可直接粘贴')
     return true
   }
   const text = event.clipboardData?.getData('text/plain')?.trim()

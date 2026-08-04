@@ -106,6 +106,16 @@ function resolveImageSrc(src) {
   return imageResolver(src) || ''
 }
 
+// 视频占位卡（渲染与复制链路共用）：attrs 供加 data-line 等属性，note 为说明行（调用方负责转义）
+export function buildVideoPlaceholder(videoStyle, { attrs = '', note = '' } = {}) {
+  const noteLine = note
+    ? `<p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;word-break:break-all;">${note}</p>`
+    : ''
+  return `<section${attrs} style="${escapeHtmlAttr(
+    videoStyle
+  )}"><p style="margin:0;font-size:1.35em;line-height:1.3;">▶</p><p style="margin:0.3em 0 0;font-weight:700;">视频占位</p>${noteLine}<p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">粘贴后请在公众号后台「插入 → 视频」替换此处</p></section>`
+}
+
 function createMd(theme, opts) {
   const styles = buildStyles(theme, opts)
   const chrome = CODE_CHROME[theme.codeTheme] || CODE_CHROME.dark
@@ -181,15 +191,11 @@ function createMd(theme, opts) {
     if (VIDEO_FILE.test(s)) return s
     return null
   }
-  const videoPlaceholder = (url, map) => {
-    const line = map ? ` data-line="${map[0]}"` : ''
-    const urlLine = url
-      ? `<p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;word-break:break-all;">${esc(url)}</p>`
-      : ''
-    return `<section${line} style="${escapeHtmlAttr(
-      styles.video
-    )}"><p style="margin:0;font-size:1.35em;line-height:1.3;">▶</p><p style="margin:0.3em 0 0;font-weight:700;">视频占位</p>${urlLine}<p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">粘贴后请在公众号后台「插入 → 视频」替换此处</p></section>`
-  }
+  const videoPlaceholder = (url, map) =>
+    buildVideoPlaceholder(styles.video, {
+      attrs: map ? ` data-line="${map[0]}"` : '',
+      note: url ? esc(url) : '',
+    })
   md.core.ruler.push('video_placeholder', (state) => {
     const t = state.tokens
     for (let i = 0; i < t.length; i++) {
@@ -198,7 +204,17 @@ function createMd(theme, opts) {
       if (url === null) continue
       const tok = new state.Token('html_block', '', 0)
       tok.map = t[i].map
-      tok.content = videoPlaceholder(url, t[i].map)
+      if (url.startsWith('local:')) {
+        // 本地粘贴的视频：预览渲染为可播放的播放器；
+        // data-lv 标记供复制链路识别并替换为占位卡
+        const realUrl = resolveImageSrc(url)
+        const line = t[i].map ? ` data-line="${t[i].map[0]}"` : ''
+        tok.content = `<section${line} data-lv="1" style="${escapeHtmlAttr(
+          styles.video
+        )}"><video src="${esc(realUrl)}" controls preload="metadata" style="display:block;width:100%;border-radius:8px;margin:0 auto;"></video><p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">本地视频预览；复制到公众号时会转为占位卡</p></section>`
+      } else {
+        tok.content = videoPlaceholder(url, t[i].map)
+      }
       t.splice(i, 3, tok)
     }
   })

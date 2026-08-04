@@ -279,7 +279,7 @@ warmImageCache().then(async () => {
 export function usedImageIds() {
   const ids = new Set()
   const scan = (text) => {
-    for (const m of String(text || '').matchAll(/local:(img-[a-z0-9]+)/g)) ids.add(m[1])
+    for (const m of String(text || '').matchAll(/local:((?:img|vid)-[a-z0-9]+)/g)) ids.add(m[1])
   }
   for (const d of store.docs) scan(d.content)
   for (const d of store.trash) scan(d.content)
