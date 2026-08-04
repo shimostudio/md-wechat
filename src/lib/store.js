@@ -1,6 +1,8 @@
 import { reactive, computed, watch } from 'vue'
 import { themes } from './themes.js'
 import { sample } from './sample.js'
+import { setImageResolver } from './renderer.js'
+import { getImageUrl, warmImageCache } from './imagedb.js'
 import {
   archiveSupported,
   restoreHandle,
@@ -271,6 +273,14 @@ export const store = reactive({
     return ui
   })(),
   toast: '',
+  // IndexedDB 图片缓存预热完成的信号：预热后 +1，触发预览重渲染
+  imageCacheVersion: 0,
+})
+
+// 渲染器通过它把 local: 图片引用解析成内存中的 objectURL
+setImageResolver((src) => getImageUrl(src.slice('local:'.length)))
+warmImageCache().then(() => {
+  store.imageCacheVersion += 1
 })
 
 export const theme = computed(() => themes.find((t) => t.id === store.themeId) || themes[0])

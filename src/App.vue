@@ -136,6 +136,7 @@ import { store, theme, notify, restoreDocument, createDocument, importContents }
 import { themes } from './lib/themes.js'
 import { renderMarkdown, stripPreviewMeta } from './lib/renderer.js'
 import { copyRichText, copyText } from './lib/clipboard.js'
+import { getImage, blobToDataUrl } from './lib/imagedb.js'
 import { sample, samples } from './lib/sample.js'
 
 const editorRef = ref(null)
@@ -182,14 +183,15 @@ function switchDevice(value) {
   }, 170)
 }
 
-const html = computed(() =>
-  renderMarkdown(store.md, renderTheme.value, {
+const html = computed(() => {
+  store.imageCacheVersion // 图片缓存预热完成后触发重渲染
+  return renderMarkdown(store.md, renderTheme.value, {
     ...store.settings,
     accent: store.settings.accentByTheme?.[renderTheme.value.id] || null,
     slotColors: store.settings.accentSlotsByTheme?.[renderTheme.value.id] || null,
     custom: (store.settings.custom || {})[renderTheme.value.id],
   })
-)
+})
 const charCount = computed(() => store.md.replace(/\s/g, '').length)
 const readMinutes = computed(() => Math.max(1, Math.ceil(charCount.value / 400)))
 const documentTitle = computed(() => {
@@ -396,8 +398,18 @@ function resizeBy(delta) {
 // ---- 复制 / 导入导出 / 样章 ----
 
 async function doCopy() {
-  const ok = await copyRichText(stripPreviewMeta(html.value))
+  const ok = await copyRichText(await inlineLocalImages(stripPreviewMeta(html.value)))
   notify(ok ? '排版已复制，可以去公众号后台粘贴了' : '复制失败，请手动全选预览内容')
+}
+
+// 把 HTML 里的 local: 图片引用还原成 data URI（公众号粘贴需要真实图片数据）
+async function inlineLocalImages(htmlText) {
+  const ids = [...new Set([...htmlText.matchAll(/local:(img-[a-z0-9]+)/g)].map((m) => m[1]))]
+  for (const id of ids) {
+    const blob = await getImage(id)
+    if (blob) htmlText = htmlText.split(`local:${id}`).join(await blobToDataUrl(blob))
+  }
+  return htmlText
 }
 
 async function copySource() {

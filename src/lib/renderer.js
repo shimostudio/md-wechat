@@ -94,6 +94,18 @@ function escapeHtmlAttr(value) {
     .replace(/>/g, '&gt;')
 }
 
+// local: 图片引用解析（IndexedDB 图片库的 objectURL），由应用启动时注册。
+// 未注册或解析失败时回退为空 src，渲染表现为占位而非破图链接。
+let imageResolver = null
+export function setImageResolver(fn) {
+  imageResolver = typeof fn === 'function' ? fn : null
+}
+function resolveImageSrc(src) {
+  if (!src.startsWith('local:')) return src
+  if (!imageResolver) return ''
+  return imageResolver(src) || ''
+}
+
 function createMd(theme, opts) {
   const styles = buildStyles(theme, opts)
   const chrome = CODE_CHROME[theme.codeTheme] || CODE_CHROME.dark
@@ -492,7 +504,7 @@ function createMd(theme, opts) {
   // 图片：独立图 alt 转图注；图库中的图用平铺样式、不出图注
   md.renderer.rules.image = (tokens, idx) => {
     const token = tokens[idx]
-    const src = esc(token.attrGet('src') || '')
+    const src = resolveImageSrc(esc(token.attrGet('src') || ''))
     const alt = token.content || ''
     const title = token.attrGet('title')
     const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : ''

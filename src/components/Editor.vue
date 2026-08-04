@@ -9,6 +9,7 @@ import { placeholder, ViewPlugin, Decoration, WidgetType } from '@codemirror/vie
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { notify } from '../lib/store.js'
+import { putImage, cacheImage } from '../lib/imagedb.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -136,12 +137,12 @@ const insertBlock = (text) => {
 
 // ---- 粘贴图片 ----
 
-// 剪贴板图片压缩为 JPEG data URI：限制最长边 1200px，
-// 既能看清又不至于把本地存储撑爆。
+// 剪贴板图片压缩为 JPEG Blob：限制最长边 1200px，字节存 IndexedDB，
+// 文档里只留 local: 短引用，不会把编辑器与本地存储撑爆。
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => {
+    img.onload = async () => {
       const scale = Math.min(1, 1200 / Math.max(img.width, img.height))
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(img.width * scale))
@@ -151,7 +152,15 @@ function compressImage(file) {
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       URL.revokeObjectURL(img.src)
-      resolve(canvas.toDataURL('image/jpeg', 0.85))
+      try {
+        if (canvas.convertToBlob) {
+          resolve(await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 }))
+        } else {
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode failed'))), 'image/jpeg', 0.85)
+        }
+      } catch (err) {
+        reject(err)
+      }
     }
     img.onerror = () => {
       URL.revokeObjectURL(img.src)
@@ -164,11 +173,14 @@ function compressImage(file) {
 async function insertImageFile(file) {
   if (!view) return
   try {
-    const dataUrl = await compressImage(file)
+    const blob = await compressImage(file)
+    const id = `img-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    await putImage(id, blob)
+    cacheImage(id, blob)
     const { from, to } = view.state.selection.main
-    const insert = `![粘贴的图片](${dataUrl})`
+    const insert = `![粘贴的图片](local:${id})`
     view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
-    notify('已插入本地图片，复制到公众号可直接使用')
+    notify('已插入图片，复制到公众号时可正常使用')
   } catch {
     notify('图片读取失败，请重试')
   }

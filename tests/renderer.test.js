@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { renderMarkdown, stripPreviewMeta } from '../src/lib/renderer.js'
+import { renderMarkdown, stripPreviewMeta, setImageResolver } from '../src/lib/renderer.js'
 import { buildStyles, themes } from '../src/lib/themes.js'
 
 const galleryMarkdown = `# 多图测试
@@ -237,4 +237,14 @@ test('视频写法渲染为占位卡片，普通 iframe 与句中链接不受影
 
   const inline = renderMarkdown('这个地址 https://example.com/c.mp4 写在句子里', themes[0], {})
   assert.doesNotMatch(inline, /视频占位/)
+})
+
+test('local: 图片引用经解析器替换，未注册时降级为空 src', () => {
+  const raw = renderMarkdown('![a](local:img-x1)', themes[0], {})
+  assert.match(raw, /src=""/)
+
+  setImageResolver((src) => (src === 'local:img-x1' ? 'blob:mock-url' : null))
+  const resolved = renderMarkdown('![a](local:img-x1)', themes[0], {})
+  assert.match(resolved, /src="blob:mock-url"/)
+  setImageResolver(null)
 })
