@@ -10,51 +10,27 @@
 
     <div class="spacer"></div>
 
-    <div class="tb-io" ref="ioRef">
-      <button
-        class="top-btn"
-        type="button"
-        :aria-expanded="ioOpen"
-        aria-haspopup="menu"
-        @click="ioOpen = !ioOpen"
-      >
-        <Icon name="upload" :size="14" aria-hidden="true" /> 导入 / 导出
-      </button>
-      <div v-if="ioOpen" class="tb-menu" role="menu">
-        <button type="button" role="menuitem" @click="act('import')">
-          <Icon name="upload" :size="14" aria-hidden="true" /> 导入 Markdown
-        </button>
-        <button type="button" role="menuitem" @click="act('export')">
-          <Icon name="download" :size="14" aria-hidden="true" /> 导出 Markdown
-        </button>
-      </div>
-    </div>
+    <nav class="tb-social" aria-label="相关链接">
+      <a href="https://github.com/laogou717/md-wechat" target="_blank" rel="noopener noreferrer" title="GitHub 仓库">
+        <Icon name="github" :size="16" aria-hidden="true" />
+      </a>
+      <a href="https://example.com/buy-me-a-coffee" target="_blank" rel="noopener noreferrer" title="请我喝咖啡">
+        <Icon name="coffee" :size="16" aria-hidden="true" />
+      </a>
+      <a href="https://x.com/yourname" target="_blank" rel="noopener noreferrer" title="X（Twitter）">
+        <Icon name="xlogo" :size="14" aria-hidden="true" />
+      </a>
+      <a href="https://space.bilibili.com/yourname" target="_blank" rel="noopener noreferrer" title="B站">
+        <Icon name="bilibili" :size="16" aria-hidden="true" />
+      </a>
+    </nav>
   </header>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import Icon from './Icon.vue'
 import { store } from '../lib/store.js'
-
-const emit = defineEmits(['import', 'export'])
-
-const ioOpen = ref(false)
-const ioRef = ref(null)
-
-function act(name) {
-  ioOpen.value = false
-  emit(name)
-}
-
-function closeOnOutside(event) {
-  if (!ioOpen.value) return
-  if (event.target instanceof Element && ioRef.value?.contains(event.target)) return
-  ioOpen.value = false
-}
-
-onMounted(() => document.addEventListener('pointerdown', closeOnOutside, true))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside, true))
 
 const saveText = computed(() => {
   if (!store.lastSavedAt) return '本地自动保存已开启'
@@ -67,40 +43,24 @@ const saveText = computed(() => {
 </script>
 
 <style scoped>
-.tb-io {
-  position: relative;
-}
-
-.tb-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 168px;
-  background: var(--panel, #fff);
-  border: 1px solid var(--line, #e3ded0);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(60, 50, 30, 0.12);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  z-index: 60;
-}
-
-.tb-menu button {
+.tb-social {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: none;
-  background: none;
-  padding: 8px 10px;
-  font-size: 12.5px;
-  color: inherit;
-  border-radius: 7px;
-  cursor: pointer;
-  text-align: left;
+  gap: 2px;
 }
 
-.tb-menu button:hover {
+.tb-social a {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--ink-2, #6b6b72);
+  border-radius: 8px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tb-social a:hover {
+  color: var(--ink, #18181b);
   background: var(--line-2, #f1ede1);
 }
 </style>

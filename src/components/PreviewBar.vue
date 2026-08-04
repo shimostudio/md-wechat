@@ -35,6 +35,25 @@
       <Icon name="copy" :size="14" aria-hidden="true" /> 复制富文本
     </button>
 
+    <div class="pmenu-wrap">
+      <button class="pio" type="button" :class="{ open: ioOpen }" @click="ioOpen = !ioOpen">
+        <Icon name="upload" :size="14" aria-hidden="true" /> 导入 / 导出
+      </button>
+      <div v-if="ioOpen" class="pmenu-backdrop" @click="ioOpen = false"></div>
+      <Transition name="pop">
+        <div v-if="ioOpen" class="pmenu">
+          <button class="menu-item" type="button" @click="actIo('import')">
+            <span class="menu-icon"><Icon name="upload" :size="15" aria-hidden="true" /></span>
+            <span class="menu-item-copy"><strong>导入 Markdown</strong><small>从本地 .md 文件新建文章</small></span>
+          </button>
+          <button class="menu-item" type="button" @click="actIo('export')">
+            <span class="menu-icon"><Icon name="download" :size="15" aria-hidden="true" /></span>
+            <span class="menu-item-copy"><strong>导出 Markdown</strong><small>当前文章保存为 .md 文件</small></span>
+          </button>
+        </div>
+      </Transition>
+    </div>
+
     <button
       class="icon-btn"
       :class="{ open: store.ui.settingsPanelOpen }"
@@ -99,7 +118,14 @@ const props = defineProps({
   canRestore: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['change-view', 'copy', 'copy-source', 'restore', 'reset', 'load-sample', 'change-device'])
+const emit = defineEmits(['change-view', 'copy', 'copy-source', 'restore', 'reset', 'load-sample', 'change-device', 'import', 'export'])
+
+const ioOpen = ref(false)
+
+function actIo(name) {
+  ioOpen.value = false
+  emit(name)
+}
 
 const views = [
   { id: 'split', name: '对照' },

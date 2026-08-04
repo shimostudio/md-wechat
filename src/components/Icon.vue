@@ -3,8 +3,8 @@
     :width="size"
     :height="size"
     viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
+    :fill="filled ? 'currentColor' : 'none'"
+    :stroke="filled ? 'none' : 'currentColor'"
     stroke-width="2"
     stroke-linecap="round"
     stroke-linejoin="round"
@@ -23,5 +23,8 @@ const props = defineProps({
   size: { type: Number, default: 16 },
 })
 
-const path = computed(() => icons[props.name] || '')
+const def = computed(() => icons[props.name] || '')
+const isObj = computed(() => typeof def.value === 'object' && def.value !== null)
+const path = computed(() => (isObj.value ? def.value.d : def.value))
+const filled = computed(() => isObj.value && !!def.value.fill)
 </script>

@@ -1,6 +1,6 @@
 <template>
   <div class="app-d">
-    <TopBar @import="importMd" @export="exportMd" />
+    <TopBar />
 
     <div class="d-body">
       <RailBar />
@@ -55,6 +55,8 @@
             @restore="restoreLastDocument"
             @reset="resetDoc"
             @load-sample="loadSample"
+            @import="importMd"
+            @export="exportMd"
           />
           <div class="preview-scroll" :class="`is-${activePreviewMode.value}`">
             <div
