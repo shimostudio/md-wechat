@@ -5,9 +5,10 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { EditorView, basicSetup } from 'codemirror'
-import { placeholder } from '@codemirror/view'
+import { placeholder, ViewPlugin, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
+import { notify } from '../lib/store.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -133,6 +134,121 @@ const insertBlock = (text) => {
   view.dispatch({ changes: { from, insert }, selection: { anchor: from + insert.length } })
 }
 
+// ---- 粘贴图片 ----
+
+// 剪贴板图片压缩为 JPEG data URI：限制最长边 1200px，
+// 既能看清又不至于把本地存储撑爆。
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, 1200 / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(img.width * scale))
+      canvas.height = Math.max(1, Math.round(img.height * scale))
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(img.src)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(img.src)
+      reject(new Error('image decode failed'))
+    }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+async function insertImageFile(file) {
+  if (!view) return
+  try {
+    const dataUrl = await compressImage(file)
+    const { from, to } = view.state.selection.main
+    const insert = `![粘贴的图片](${dataUrl})`
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+    notify('已插入本地图片，复制到公众号可直接使用')
+  } catch {
+    notify('图片读取失败，请重试')
+  }
+}
+
+// 图片直链：粘贴时自动包成 Markdown 图片语法
+const IMAGE_URL = /^https?:\/\/\S+?\.(?:png|jpe?g|gif|webp|svg|bmp|avif)(?:\?\S*)?$/i
+
+// ---- 本地图片（data URI）在编辑器里折叠为卡片 ----
+// 文档里保留完整 data URI（复制到公众号可直接用），
+// 编辑器视图上替换成一张小卡片，避免整屏 base64。
+
+class ImageChip extends WidgetType {
+  constructor(alt, kb) {
+    super()
+    this.alt = alt
+    this.kb = kb
+  }
+  eq(other) {
+    return other.alt === this.alt && other.kb === this.kb
+  }
+  toDOM() {
+    const span = document.createElement('span')
+    span.className = 'cm-img-chip'
+    span.textContent = `🖼 ${this.alt || '本地图片'} · ${this.kb}KB`
+    return span
+  }
+  ignoreEvent() {
+    return false
+  }
+}
+
+const DATA_URI_IMG = /!\[([^\]]*)\]\(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+\)/gi
+
+const imageChipPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view)
+    }
+    update(u) {
+      if (u.docChanged || u.viewportChanged) this.decorations = this.build(u.view)
+    }
+    build(view) {
+      const ranges = []
+      for (const { from, to } of view.visibleRanges) {
+        const text = view.state.doc.sliceString(from, to)
+        DATA_URI_IMG.lastIndex = 0
+        let m
+        while ((m = DATA_URI_IMG.exec(text))) {
+          const start = from + m.index
+          const end = start + m[0].length
+          const kb = Math.max(1, Math.round((m[0].length * 3) / 4 / 1024))
+          ranges.push(Decoration.replace({ widget: new ImageChip(m[1], kb) }).range(start, end))
+        }
+      }
+      return Decoration.set(ranges)
+    }
+  },
+  { decorations: (v) => v.decorations }
+)
+
+function onPaste(event) {
+  const files = [...(event.clipboardData?.files || [])]
+  const imageFile = files.find((f) => f.type.startsWith('image/'))
+  if (imageFile) {
+    event.preventDefault()
+    insertImageFile(imageFile)
+    return true
+  }
+  const text = event.clipboardData?.getData('text/plain')?.trim()
+  if (text && IMAGE_URL.test(text)) {
+    event.preventDefault()
+    const { from, to } = view.state.selection.main
+    const insert = `![](${text})`
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+    return true
+  }
+  return false
+}
+
 const wrapLink = () => {
   const { from, to } = view.state.selection.main
   const sel = view.state.sliceDoc(from, to) || '链接文字'
@@ -192,7 +308,12 @@ onMounted(() => {
         basicSetup,
         markdown(),
         EditorView.lineWrapping,
+        // 写作者不需要多光标/矩形选择；禁用后即使环境（卡住的修饰键、
+        // 手势软件）触发了这些手势，选择行为也退化为普通单选区。
+        EditorState.allowMultipleSelections.of(false),
+        imageChipPlugin,
         placeholder('从这里开始，用 Markdown 书写你的文章…'),
+        EditorView.domEventHandlers({ paste: onPaste }),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !syncingFromModel) {
             emit('update:modelValue', u.state.doc.toString())
@@ -209,13 +330,32 @@ onMounted(() => {
             border: 'none',
             color: '#c6c6cf',
             paddingLeft: '4px',
+            // 防止从行号栏起拖时选中行号本身
+            userSelect: 'none',
           },
-          '.cm-activeLine': { backgroundColor: '#f7f4eb' },
+          // 当前行底色必须半透明：选区层在内容层之下（z-index:-2），
+          // 不透明底色会把单行内的选区高亮整个盖住
+          '.cm-activeLine': { backgroundColor: 'rgba(120, 110, 80, 0.08)' },
           '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#8e8e99' },
+          // 选区高亮必须始终可见：失焦后隐藏会让用户误以为"松开就没选上"，
+          // 颜色也要在米色底上有足够对比度
+          '.cm-selectionBackground': { backgroundColor: '#b3e6cd' },
           '&.cm-focused .cm-selectionBackground, ::selection': {
-            backgroundColor: '#d7f3e6 !important',
+            backgroundColor: '#b3e6cd !important',
           },
           '.cm-cursor': { borderLeftColor: '#07c160', borderLeftWidth: '2px' },
+          '.cm-img-chip': {
+            display: 'inline-block',
+            padding: '1px 10px',
+            margin: '0 2px',
+            backgroundColor: '#e9f3ec',
+            border: '1px solid #b9d9c6',
+            borderRadius: '999px',
+            fontSize: '12px',
+            color: '#1e6b41',
+            verticalAlign: 'baseline',
+            cursor: 'default',
+          },
         }),
       ],
     }),
