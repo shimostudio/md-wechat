@@ -1153,10 +1153,11 @@ body.col-resizing {
 
 .toolbar {
   display: flex;
-  min-height: 48px;
+  height: 46px;
+  box-sizing: border-box;
   align-items: center;
   gap: 0;
-  padding: 6px 12px;
+  padding: 0 12px;
   overflow-x: auto;
   flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.96);
