@@ -38,7 +38,7 @@
             @click="selectDocument(doc.id)"
           >
             <div class="doc-title">{{ docTitle(doc.content) }}</div>
-            <div class="doc-meta">{{ wordCount(doc.content) }} 字 · {{ formatTime(doc.updatedAt) }}</div>
+            <div class="doc-meta">{{ countChars(doc.content) }} 字 · {{ formatTime(doc.updatedAt) }}</div>
             <button
               class="doc-more"
               type="button"
@@ -108,6 +108,7 @@ import Icon from './Icon.vue'
 import {
   store,
   docTitle,
+  countChars,
   notify,
   createDocument,
   selectDocument,
@@ -127,10 +128,6 @@ const visibleDocs = computed(() => {
   if (!q) return sorted
   return sorted.filter((d) => docTitle(d.content).toLowerCase().includes(q))
 })
-
-function wordCount(content) {
-  return String(content || '').replace(/\s/g, '').length
-}
 
 function formatTime(ts) {
   const d = new Date(ts)

@@ -21,6 +21,12 @@ function mediaNotify(baseMsg) {
   notify(`${baseMsg}。媒体会随复制一起带走：图片 ≤2MB、视频 ≤100MB，过大请先压缩`)
 }
 
+// 图床上传成功提示；GitHub 走 jsdelivr CDN，新文件生效有延迟
+function hostNotify(baseMsg) {
+  const cdnNote = store.settings.imageHost?.provider === 'github' ? '（jsdelivr CDN 生效可能需几分钟）' : ''
+  notify(`${baseMsg}${cdnNote}`)
+}
+
 const props = defineProps({
   modelValue: { type: String, default: '' },
 })
@@ -188,9 +194,12 @@ async function insertImageFile(file) {
       try {
         const url = await uploadBlobToHost(blob, `paste-${Date.now().toString(36)}.jpg`)
         const { from, to } = view.state.selection.main
-        const insert = `![粘贴的图片](${url})`
-        view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
-        mediaNotify('已上传图床并插入链接')
+        const insert = `![](${url})`
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: from + 2 }, // 光标落在 [] 里，方便直接输入图注
+        })
+        hostNotify('已上传图床并插入链接')
         return
       } catch {
         notify('图床上传失败，已改为本地存储')
@@ -200,8 +209,11 @@ async function insertImageFile(file) {
     await putImage(id, blob)
     cacheImage(id, blob)
     const { from, to } = view.state.selection.main
-    const insert = `![粘贴的图片](local:${id})`
-    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+    const insert = `![](local:${id})`
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 2 }, // 光标落在 [] 里，方便直接输入图注
+    })
     mediaNotify('已插入图片，复制到公众号时可正常使用')
   } catch {
     notify('图片读取失败，请重试')
@@ -225,7 +237,7 @@ async function insertVideoFile(file) {
         const { from, to } = view.state.selection.main
         const insert = `\n\n<video src="${url}"></video>\n\n`
         view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
-        mediaNotify('已上传图床并插入链接')
+        hostNotify('已上传图床并插入链接')
         return
       } catch {
         notify('图床上传失败，已改为本地存储')
@@ -321,10 +333,34 @@ function onPaste(event) {
     event.preventDefault()
     const { from, to } = view.state.selection.main
     const insert = `![](${text})`
-    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 2 }, // 光标落在 [] 里，方便直接输入图注
+    })
     return true
   }
   return false
+}
+
+// 拖放图片/视频：与粘贴走同一套插入逻辑，阻止浏览器默认“打开文件”行为
+function onDrop(event) {
+  const files = [...(event.dataTransfer?.files || [])]
+  if (!files.length) return false
+  const imageFile = files.find((f) => f.type.startsWith('image/'))
+  if (imageFile) {
+    event.preventDefault()
+    insertImageFile(imageFile)
+    return true
+  }
+  const videoFile = files.find((f) => f.type.startsWith('video/'))
+  if (videoFile) {
+    event.preventDefault()
+    insertVideoFile(videoFile)
+    return true
+  }
+  event.preventDefault()
+  notify('暂不支持该格式；图片、视频可直接拖入')
+  return true
 }
 
 const wrapLink = () => {
@@ -337,24 +373,33 @@ const wrapLink = () => {
   })
 }
 
-const wrapImage = () => {
-  const { from, to } = view.state.selection.main
-  const sel = view.state.sliceDoc(from, to) || '图片描述'
-  const insert = `![${sel}](https://)`
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: from + sel.length + 4, head: from + sel.length + 12 },
-  })
-}
-
 const INLINE = { bold: '**', italic: '*', strike: '~~', inlineCode: '`' }
+
+// 隐藏的文件选择器：工具栏「图片」按钮走本地选图，与粘贴/拖放共用插入链路
+let fileInput = null
+
+function selectImageFile() {
+  if (!fileInput) {
+    fileInput = document.createElement('input')
+    fileInput.type = 'file'
+    fileInput.accept = 'image/*'
+    fileInput.style.display = 'none'
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files?.[0]
+      if (file) insertImageFile(file)
+      fileInput.value = ''
+    })
+    document.body.appendChild(fileInput)
+  }
+  fileInput.click()
+}
 
 function exec(cmd) {
   if (!view) return
   if (INLINE[cmd]) wrapInline(INLINE[cmd])
   else if (PREFIX_RULES[cmd]) toggleLinePrefix(cmd)
   else if (cmd === 'link') wrapLink()
-  else if (cmd === 'image') wrapImage()
+  else if (cmd === 'image-file') selectImageFile()
   else if (cmd === 'codeBlock') insertBlock('```js\n\n```')
   else if (cmd === 'table') insertBlock('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |')
   else if (cmd === 'gallery') insertBlock('![图片一](https://)\n\n![图片二](https://)\n\n![图片三](https://)')
@@ -391,7 +436,17 @@ onMounted(() => {
         EditorState.allowMultipleSelections.of(false),
         imageChipPlugin,
         placeholder('从这里开始，用 Markdown 书写你的文章…'),
-        EditorView.domEventHandlers({ paste: onPaste }),
+        EditorView.domEventHandlers({
+          paste: onPaste,
+          // 拖入文件时允许 drop（dragover 默认拒绝非文本拖放）
+          dragover: (e) => {
+            if (e.dataTransfer?.types.includes('Files')) {
+              e.preventDefault()
+              return true
+            }
+          },
+          drop: onDrop,
+        }),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !syncingFromModel) {
             emit('update:modelValue', u.state.doc.toString())
@@ -487,6 +542,8 @@ watch(
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(scrollRaf)
+  fileInput?.remove()
+  fileInput = null
   view?.destroy()
   view = null
 })

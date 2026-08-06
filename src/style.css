@@ -1118,6 +1118,8 @@ input[type='range']::-moz-range-thumb {
   width: 7px;
   flex: 0 0 7px;
   cursor: col-resize;
+  /* 触摸设备上拖动分隔条时不触发页面滚动 */
+  touch-action: none;
   background: #e4e9e6;
   transition: background-color 140ms ease;
 }
@@ -1407,6 +1409,8 @@ body.col-resizing {
   overflow-y: auto;
   background: #fff;
   scrollbar-gutter: stable;
+  /* 跟随滚动频繁改动 scrollTop：提示浏览器走合成滚动，减少主线程负担 */
+  will-change: scroll-position;
 }
 
 .page[data-preview-device='mobile'] {
@@ -4005,6 +4009,34 @@ body {
 .wechat-chrome[data-device='full'] {
   max-width: 677px;
   margin: 0 auto;
+}
+
+/* 预览里的图片禁掉浏览器原生拖拽，否则拖一下就被当成"拖图"，
+   画廊微调的 pointermove 流会被 dragstart 吃掉 */
+.wechat-chrome img {
+  -webkit-user-drag: none;
+}
+
+/* 画廊微调：可拖拽光标 + 拖动时的高亮描边；touch-action 让触摸拖动不触发页面滚动 */
+.wechat-chrome [data-gallery-mode] img {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.gal-active > section {
+  outline: 2px solid rgba(7, 193, 96, 0.65);
+  outline-offset: -2px;
+}
+
+.gal-snapped > section {
+  outline-color: #07c160;
+  outline-width: 3px;
+}
+
+/* 拖拽分隔条 / 微调画廊期间，禁止选中页面内容（避免拖动时正文被划选高亮） */
+body.col-resizing,
+body.gal-dragging {
+  user-select: none;
 }
 
 /* 底色对齐真实文章页：网页/桌面为纯白，手机浮于暖点底纹 */

@@ -39,8 +39,13 @@
           class="tp-card"
           :class="{ active: t.id === store.themeId }"
           role="button"
+          tabindex="0"
           :aria-pressed="t.id === store.themeId"
+          @mouseenter="store.previewThemeId = t.id"
+          @mouseleave="store.previewThemeId = null"
           @click="pick(t)"
+          @keydown.enter.prevent="pick(t)"
+          @keydown.space.prevent="pick(t)"
         >
           <div class="tp-thumb" :style="{ background: t.surface || '#ffffff' }">
             <div class="tp-thumb-content" v-html="previewHtml[t.id]"></div>
@@ -108,7 +113,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { themes, themeCategories, categoryOrder, COLOR_SLOTS } from '../lib/themes.js'
 import { renderMarkdown } from '../lib/renderer.js'
@@ -168,7 +173,17 @@ const presets = ['#3eaf7c', '#2f6b4f', '#1e6fff', '#7e5aa2', '#eb2f96', '#e8830c
 
 function pick(t) {
   store.themeId = t.id
+  // 选中即退出“试看”态，避免与正式主题不一致
+  store.previewThemeId = null
 }
+
+// 面板收起时清掉悬停残留的试看主题（悬停中直接关闭面板的兜底）
+watch(
+  () => store.ui.themePanelOpen,
+  (open) => {
+    if (!open) store.previewThemeId = null
+  }
+)
 
 function toggleFav(id) {
   const favs = new Set(store.settings.favoriteThemes || [])

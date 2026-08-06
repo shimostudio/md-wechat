@@ -63,11 +63,12 @@ export function getCachedImageEntries() {
   return [...objectUrls.entries()]
 }
 
-// 启动时把库存图片预热进内存缓存
-export async function warmImageCache() {
+// 把指定 id 的媒体预热进内存缓存；不传则全量预热。
+// 调用方应传当前仍被引用的 id（避免把历史遗留的大视频、孤儿图全部载入内存）。
+export async function warmImageCache(ids) {
   try {
-    const ids = await allImageIds()
-    for (const id of ids) {
+    const list = ids || (await allImageIds())
+    for (const id of list) {
       if (!objectUrls.has(id)) {
         const blob = await getImage(id)
         if (blob) cacheImage(id, blob)

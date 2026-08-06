@@ -159,7 +159,10 @@ async function uploadAll(kind) {
     const { done, failed, total } = await uploadDocMedia(store.activeDocId, kind)
     if (!total) notify(`本文没有本地${label}`)
     else if (failed) notify(`上传完成：${done} 成功，${failed} 失败`)
-    else notify(`已上传 ${done} 个${label}，链接已替换为公网地址`)
+    else {
+      const cdnNote = store.settings.imageHost?.provider === 'github' ? '（jsdelivr CDN 生效可能需几分钟）' : ''
+      notify(`已上传 ${done} 个${label}，链接已替换为公网地址${cdnNote}`)
+    }
   } finally {
     uploading.value = false
   }

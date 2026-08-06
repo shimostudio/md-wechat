@@ -1,7 +1,7 @@
 import { reactive, computed, watch } from 'vue'
 import { themes } from './themes.js'
 import { sample } from './sample.js'
-import { setImageResolver } from './renderer.js'
+import { setImageResolver, setImageAspectProvider, setGalleryOverrideProvider } from './renderer.js'
 import { getImageUrl, warmImageCache, pruneImages, getImage } from './imagedb.js'
 import { getImageHost } from './imagehost.js'
 
@@ -83,6 +83,7 @@ function loadSettings() {
     editorPct: 50,
     viewMode: 'split',
     galleryMode: 'collage',
+    galleryRatio: '1:1',
     favoriteThemes: [],
     custom: {},
     imageHost: { provider: '', config: {}, always: 'off' },
@@ -103,6 +104,10 @@ function loadSettings() {
   settings.previewWidth = normalizePreviewMode(settings.previewWidth)
   if (typeof saved.galleryMode !== 'string' || !saved.galleryMode) {
     settings.galleryMode = defaults.galleryMode
+  }
+  // 网格图比例：仅「网格」模式生效，所有网格图统一裁切为该比例
+  if (!['1:1', '4:5', '3:4'].includes(settings.galleryRatio)) {
+    settings.galleryRatio = defaults.galleryRatio
   }
   if (!['split', 'preview'].includes(settings.viewMode)) {
     // “写作”单栏视图已下线，统一回到对照视图。
@@ -205,6 +210,11 @@ export function docTitle(content) {
   return (m?.[1] || '未命名文章').replace(/[*_`~[\]]/g, '').trim() || '未命名文章'
 }
 
+// 字符数（不计空白），状态栏与文档列表共用
+export function countChars(text) {
+  return String(text || '').replace(/\s/g, '').length
+}
+
 function makeDoc(content, now = Date.now()) {
   return {
     id: `doc-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -279,15 +289,74 @@ export const store = reactive({
   toast: '',
   // IndexedDB 图片缓存预热完成的信号：预热后 +1，触发预览重渲染
   imageCacheVersion: 0,
+  // 图片比例学习到新值的信号：对齐式画廊据此重渲染
+  aspectVersion: 0,
 })
 
 // 渲染器通过它把 local: 图片引用解析成内存中的 objectURL
 setImageResolver((src) => getImageUrl(src.slice('local:'.length)))
-warmImageCache().then(async () => {
+// 只预热仍被引用的媒体（文档、回收站、备份），避免把历史遗留的大文件全量载入内存
+warmImageCache(usedImageIds()).then(async () => {
   store.imageCacheVersion += 1
   // 启动时自动清理孤儿图片（回收站与备份里的引用保留）
   await pruneImages(usedImageIds()).catch(() => {})
 })
+
+// ---- 图片宽高比缓存（对齐式画廊按它分配宽度） ----
+const savedAspects = load('wmd-aspects', {})
+const imageAspects = reactive(savedAspects && typeof savedAspects === 'object' && !Array.isArray(savedAspects) ? savedAspects : {})
+setImageAspectProvider((src) => imageAspects[src])
+
+export function registerImageAspect(src, width, height) {
+  if (!src || !width || !height) return false
+  const a = Math.round((width / height) * 1000) / 1000
+  if (imageAspects[src] && Math.abs(imageAspects[src] - a) < 0.01) return false
+  imageAspects[src] = a
+  write('wmd-aspects', { ...imageAspects })
+  return true
+}
+
+// 查询某张图的宽高比（画廊拖拽的解析吸附与渲染器 justifiedWidths 共用同一数据源）
+export function getImageAspect(src) {
+  return src ? imageAspects[src] : undefined
+}
+
+// ---- 画廊宽度覆盖（预览里拖拽/自动微调的结果，按图片地址记忆） ----
+// 条目格式 { v: 百分比, auto: 是否自动微调 }；auto 条目允许后续自动修正，
+// 手动拖拽（auto:false）永远优先。兼容早期的纯数字格式。
+const savedOverrides = load('wmd-gallery-overrides', {})
+const galleryOverrides = reactive(
+  savedOverrides && typeof savedOverrides === 'object' && !Array.isArray(savedOverrides) ? savedOverrides : {}
+)
+setGalleryOverrideProvider((src) => {
+  const e = galleryOverrides[src]
+  return typeof e === 'number' ? e : e?.v
+})
+
+export function setGalleryOverride(src, pct, { auto = false } = {}) {
+  if (!src) return
+  galleryOverrides[src] = { v: Math.round(pct * 100) / 100, auto }
+  write('wmd-gallery-overrides', { ...galleryOverrides })
+}
+
+export function getGalleryOverride(src) {
+  const e = src ? galleryOverrides[src] : undefined
+  if (typeof e === 'number') return e
+  return e && typeof e.v === 'number' ? e.v : null
+}
+
+// 是否手动拖拽产生的覆盖（自动微调条目返回 false，允许继续修正）
+export function isManualGalleryOverride(src) {
+  const e = src ? galleryOverrides[src] : undefined
+  return !!e && typeof e === 'object' && e.auto === false
+}
+
+export function clearGalleryOverride(src) {
+  if (!src || !(src in galleryOverrides)) return false
+  delete galleryOverrides[src]
+  write('wmd-gallery-overrides', { ...galleryOverrides })
+  return true
+}
 
 // 所有存活文档（含回收站与备份）仍在引用的图片 id
 export function usedImageIds() {
@@ -330,21 +399,32 @@ export async function uploadDocMedia(docId, kind) {
   const ids = [...new Set([...doc.content.matchAll(re)].map((m) => m[1]))]
   let done = 0
   let failed = 0
-  for (const id of ids) {
-    try {
-      const blob = await getImage(id)
-      if (!blob) {
+
+  // 并发 3 路上传；内容替换是同步语句，各任务间不会互相覆盖
+  const CONCURRENCY = 3
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < ids.length) {
+      const id = ids[cursor]
+      cursor += 1
+      try {
+        const blob = await getImage(id)
+        if (!blob) {
+          failed += 1
+          continue
+        }
+        const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'bin'
+        const url = await uploadBlobToHost(blob, `${id}.${ext}`)
+        // 后缀断言防止 id 前缀重叠（local:img-abc 不会误匹配 local:img-abcd）
+        doc.content = doc.content.replace(new RegExp(`local:${id}(?![a-z0-9])`, 'g'), url)
+        done += 1
+      } catch {
         failed += 1
-        continue
       }
-      const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'bin'
-      const url = await uploadBlobToHost(blob, `${id}.${ext}`)
-      doc.content = doc.content.split(`local:${id}`).join(url)
-      done += 1
-    } catch {
-      failed += 1
     }
   }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, () => worker()))
+
   if (done) {
     doc.updatedAt = Date.now()
     if (doc.id === store.activeDocId) store.md = doc.content

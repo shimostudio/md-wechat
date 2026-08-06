@@ -43,7 +43,7 @@
       <button class="tb-btn" type="button" title="链接" aria-label="插入链接" @mousedown.prevent @click="emit('cmd', 'link')">
         <Icon name="link" aria-hidden="true" />
       </button>
-      <button class="tb-btn" type="button" title="图片" aria-label="插入图片" @mousedown.prevent @click="emit('cmd', 'image')">
+      <button class="tb-btn" type="button" title="插入本地图片（也可直接粘贴或拖入图片）" aria-label="插入本地图片" @mousedown.prevent @click="emit('cmd', 'image-file')">
         <Icon name="image" aria-hidden="true" />
       </button>
       <button class="tb-btn" type="button" title="图库（连续多图自动拼图）" aria-label="插入图库" @mousedown.prevent @click="emit('cmd', 'gallery')">

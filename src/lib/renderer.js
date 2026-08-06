@@ -1,6 +1,57 @@
 import MarkdownIt from 'markdown-it'
 import markdownItMark from 'markdown-it-mark'
-import hljs from 'highlight.js/lib/common'
+// 只注册常用语言，避免全量（150+）或 common（40）语言打入包内。
+// 未注册的语言自动回退为纯文本代码块，不影响排版。
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import java from 'highlight.js/lib/languages/java'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import sql from 'highlight.js/lib/languages/sql'
+import bash from 'highlight.js/lib/languages/bash'
+import json from 'highlight.js/lib/languages/json'
+import css from 'highlight.js/lib/languages/css'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
+import php from 'highlight.js/lib/languages/php'
+import ruby from 'highlight.js/lib/languages/ruby'
+import kotlin from 'highlight.js/lib/languages/kotlin'
+import swift from 'highlight.js/lib/languages/swift'
+import markdown from 'highlight.js/lib/languages/markdown'
+import diff from 'highlight.js/lib/languages/diff'
+import dockerfile from 'highlight.js/lib/languages/dockerfile'
+import ini from 'highlight.js/lib/languages/ini'
+
+const LANGUAGES = {
+  javascript,
+  typescript,
+  python,
+  java,
+  c,
+  cpp,
+  go,
+  rust,
+  sql,
+  bash,
+  json,
+  css,
+  xml,
+  yaml,
+  php,
+  ruby,
+  kotlin,
+  swift,
+  markdown,
+  diff,
+  dockerfile,
+  ini,
+}
+for (const [name, register] of Object.entries(LANGUAGES)) hljs.registerLanguage(name, register)
+
 import { buildStyles } from './themes.js'
 
 // highlight.js 类名 -> 内联样式，深浅两套配色（公众号会剥离 <style>，高亮必须内联）。
@@ -86,6 +137,9 @@ const cache = new Map()
 const normalizeGalleryMode = (mode) =>
   mode === 'grid' || mode === 'stack' || mode === 'collage' ? mode : 'collage'
 
+// 网格图统一裁切比例（公众号已验证支持 aspect-ratio + object-fit）
+const normalizeGalleryRatio = (ratio) => (ratio === '4:5' || ratio === '3:4' ? ratio : '1:1')
+
 function escapeHtmlAttr(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -116,11 +170,96 @@ export function buildVideoPlaceholder(videoStyle, { attrs = '', note = '' } = {}
   )}"><p style="margin:0;font-size:1.35em;line-height:1.3;">▶</p><p style="margin:0.3em 0 0;font-weight:700;">视频占位</p>${noteLine}<p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">粘贴后请在公众号后台「插入 → 视频」替换此处</p></section>`
 }
 
+// ---- 对齐式画廊：按图片宽高比分配宽度，天然同高、上下齐平 ----
+// 比例由应用侧量取后注册（本地图粘贴时、外链图加载后）；未知时按 4:3 估算。
+let aspectProvider = null
+export function setImageAspectProvider(fn) {
+  aspectProvider = typeof fn === 'function' ? fn : null
+}
+function aspectOf(src) {
+  const v = aspectProvider ? Number(aspectProvider(src)) : 0
+  return Number.isFinite(v) && v > 0.1 && v < 10 ? v : 4 / 3
+}
+// 用户在预览里拖拽调整后的宽度覆盖（按图片地址记忆）
+let galleryOverrideProvider = null
+export function setGalleryOverrideProvider(fn) {
+  galleryOverrideProvider = typeof fn === 'function' ? fn : null
+}
+function overrideOf(src) {
+  const v = galleryOverrideProvider ? Number(galleryOverrideProvider(src)) : 0
+  return Number.isFinite(v) && v > 10 && v < 90 ? v : null
+}
+// 同排图片 高度 = 宽度/比例，故宽度按比例分配即同高。
+// 间隙一律用行宽百分比（GAP），等式在任何行宽下严格成立、底边精确齐平。
+const GAP = 0.012
+function justifiedWidths(mode, count, aspects) {
+  const row = (idxs) => {
+    const sum = idxs.reduce((s, j) => s + aspects[j], 0)
+    const scale = 1 - GAP * (idxs.length - 1)
+    return idxs.map((j) => Math.round(((aspects[j] / sum) * scale) * 10000) / 100)
+  }
+  const all = [...Array(count).keys()]
+  if (mode === 'grid') {
+    // 网格：同宽均分，不按宽高比分配（公众号不执行固定高度裁切，
+    // 同宽是唯一能保证的整齐观感）。每行 3 张（32.53%）；4 张为 2×2（49.4%）；
+    // 尾行 2 张 49.4%、尾行 1 张 100%。宽度总和 + space-between 间隙 = 100%。
+    const w3 = Math.round(((100 - GAP * 100 * 2) / 3) * 100) / 100
+    const w2 = Math.round(((100 - GAP * 100) / 2) * 100) / 100
+    const rows = []
+    if (count === 2 || count === 4) {
+      rows.push(2)
+      if (count === 4) rows.push(2)
+    } else {
+      for (let rest = count; rest > 0; rest -= 3) rows.push(Math.min(3, rest))
+    }
+    const widths = []
+    for (const n of rows) {
+      const w = n === 3 ? w3 : n === 2 ? w2 : 100
+      for (let i = 0; i < n; i++) widths.push(w)
+    }
+    return widths
+  }
+  if (count === 2) return row(all)
+  if (count === 3) {
+    // 左大图 + 右侧纵向两张：左高 = 右列总高。
+    // 右列两图按"裁切填充"显示（固定高 = 左高的一半，见 rightColumnRatio），
+    // 所以右列高恒等于左高，公式只需给出左宽基准；主图宽度封顶
+    // [50, 68]%，横图/竖图首图时右列不至于过窄或过宽。
+    const [a0, a1, a2] = aspects
+    const S = 1 / a1 + 1 / a2 + GAP
+    const x = (a0 * (1 - GAP) * S) / (1 + a0 * S)
+    return [Math.round(Math.min(0.68, Math.max(0.5, x)) * 10000) / 100, null, null]
+  }
+  if (count === 4) return [null, ...row([1, 2, 3])]
+  // 5+：焦点区同三图公式，余图每排对齐
+  const [a0, a1, a2] = aspects
+  const S = 1 / a1 + 1 / a2 + GAP
+  const x = (a0 * (1 - GAP) * S) / (1 + a0 * S)
+  const out = [Math.round(Math.min(0.68, Math.max(0.5, x)) * 10000) / 100, null, null]
+  const rest = all.slice(3)
+  const perRow = rest.length === 3 ? 3 : 2
+  for (let s = 0; s < rest.length; s += perRow) out.push(...row(rest.slice(s, s + perRow)))
+  return out
+}
+
+// 焦点区右列两图的裁切比例（宽:高）。左宽为最终宽度（含手动覆盖），
+// 单位为"行宽百分比"：右列宽 = 行宽 - 左宽 - 间隙；两图各高 =
+// (左图高 - 间隙) / 2。裁切填充使右列总高恒等于左图高，底边永远齐平，
+// 且左图宽度可自由拖拽而不破坏对齐。
+function rightColumnRatio(leftW, a0) {
+  const leftH = leftW / a0
+  const rightW = 100 - GAP * 100 - leftW
+  const itemH = (leftH - GAP * 100) / 2
+  if (!(rightW > 5) || !(itemH > 5)) return null
+  return `${Math.round(rightW * 100) / 100}:${Math.round(itemH * 100) / 100}`
+}
+
 function createMd(theme, opts) {
   const styles = buildStyles(theme, opts)
   const chrome = CODE_CHROME[theme.codeTheme] || CODE_CHROME.dark
   const macCode = !!opts.macCode
   const galleryMode = normalizeGalleryMode(opts.galleryMode)
+  const galleryRatio = normalizeGalleryRatio(opts.galleryRatio).split(':').join('/')
   const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
   md.use(markdownItMark) // ==高亮标记==
   const esc = md.utils.escapeHtml
@@ -156,11 +295,24 @@ function createMd(theme, opts) {
         let count = 0
         while (isSingleImgPara(i + count * 3)) count++
         if (count < 2) continue
+        const srcs = []
+        for (let k = 0; k < count; k++) srcs.push(t[i + k * 3 + 1].children[0].attrGet('src') || '')
+        const widths = justifiedWidths(galleryMode, count, srcs.map(aspectOf))
+        for (let k = 0; k < count; k++) {
+          const ov = overrideOf(srcs[k])
+          if (ov != null && widths[k] != null) widths[k] = ov
+        }
         for (let k = 0; k < count; k++) {
           const base = i + k * 3
           t[base].attrSet('data-g', `${count}:${k}`)
           t[base + 2].attrSet('data-gc', `${count}:${k}`)
           t[base + 1].children[0].attrSet('data-gi', `plain:${count}:${k}`)
+          t[base + 1].children[0].attrSet('data-gw', widths[k] == null ? '' : String(widths[k]))
+          // 焦点区右列两图：裁切填充，比例随最终左宽（含手动覆盖）计算
+          if ((count === 3 || count >= 5) && (k === 1 || k === 2)) {
+            const gr = rightColumnRatio(widths[0], aspectOf(srcs[0]))
+            if (gr) t[base + 1].children[0].attrSet('data-gr', gr)
+          }
         }
         i += count * 3 - 1
       } else {
@@ -168,10 +320,24 @@ function createMd(theme, opts) {
         if (!count) continue
         t[i].attrSet('data-g', `${count}:wrap`)
         t[i + 2].attrSet('data-gc', 'wrap')
+        const imgChildren = t[i + 1].children.filter((x) => x.type === 'image')
+        const widths = justifiedWidths(galleryMode, count, imgChildren.map((x) => aspectOf(x.attrGet('src') || '')))
+        for (let k = 0; k < imgChildren.length; k++) {
+          const ov = overrideOf(imgChildren[k].attrGet('src') || '')
+          if (ov != null && widths[k] != null) widths[k] = ov
+        }
         let k = 0
         for (const x of t[i + 1].children) {
-          if (x.type === 'image') x.attrSet('data-gi', `${count}:${k++}`)
-          else if (x.type === 'softbreak') x.attrSet('data-gskip', '1')
+          if (x.type === 'image') {
+            x.attrSet('data-gi', `${count}:${k}`)
+            x.attrSet('data-gw', widths[k] == null ? '' : String(widths[k]))
+            // 焦点区右列两图：裁切填充（同模式 A）
+            if ((count === 3 || count >= 5) && (k === 1 || k === 2)) {
+              const gr = rightColumnRatio(widths[0], aspectOf(imgChildren[0].attrGet('src') || ''))
+              if (gr) x.attrSet('data-gr', gr)
+            }
+            k++
+          } else if (x.type === 'softbreak') x.attrSet('data-gskip', '1')
         }
       }
     }
@@ -280,23 +446,26 @@ function createMd(theme, opts) {
   }
 
   // 每个布局都只使用 section + inline flex，不依赖 grid、定位或外部 CSS。
-  // collage 的嵌套开合由序号决定，因此既支持空行分隔的图片，也支持同段软换行图片。
-  const galleryItemParts = (count, i) => {
+  // 格子不定高、宽度按各图宽高比分配（对齐式布局），同排天然同高、上下齐平；
+  // 公众号编辑器不执行固定高度裁剪，这样预览与粘贴后的效果保持一致。
+  const galleryItemParts = (count, i, gw) => {
     if (galleryMode === 'stack') {
       return {
-        open: `<section style="margin:0 0 ${i === count - 1 ? '0' : '8px'};overflow:hidden;">`,
+        open: `<section style="margin:0 0 ${i === count - 1 ? '0' : '8px'};">`,
         close: '</section>',
         image: 'height:auto;box-sizing:border-box;',
       }
     }
 
     if (galleryMode === 'grid') {
-      const width = count === 2 ? '49%' : count === 3 ? '32%' : count === 4 ? '49%' : '32%'
-      const height = count === 2 ? 190 : count === 3 ? 150 : 156
+      // 兜底与 justifiedWidths 的均分规则一致：尾行单张占满一行
+      const width = gw ? `${gw}%` : count === 2 || count === 4 ? '49.4%' : count === 1 ? '100%' : '32.53%'
       return {
-        open: `<section style="width:${width};height:${height}px;margin-bottom:6px;overflow:hidden;">`,
+        open: `<section style="width:${width};margin-bottom:1.2%;">`,
         close: '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        // 统一比例（默认 1:1 正方形）+ cover 裁切，网格图统一尺寸、行内行间完全齐平。
+        // 公众号若过滤掉 aspect-ratio/object-fit 则退化为按原比例显示，不会破版
+        image: `aspect-ratio:${galleryRatio};object-fit:cover;height:auto;box-sizing:border-box;`,
       }
     }
 
@@ -304,46 +473,46 @@ function createMd(theme, opts) {
       return {
         open:
           i === 0
-            ? '<section style="width:61%;height:220px;margin-right:6px;overflow:hidden;">'
-            : '<section style="flex:1;height:220px;overflow:hidden;">',
+            ? `<section style="width:${gw || 61}%;margin-right:1.2%;">`
+            : '<section style="flex:1;">',
         close: '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        image: 'height:auto;box-sizing:border-box;',
       }
     }
 
     if (count === 3) {
       if (i === 0) {
         return {
-          open: '<section style="width:62%;height:230px;margin-right:6px;overflow:hidden;">',
+          open: `<section style="width:${gw || 62}%;margin-right:1.2%;">`,
           close: '</section>',
-          image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+          image: 'height:auto;box-sizing:border-box;',
         }
       }
       return {
         open:
           i === 1
-            ? '<section style="flex:1;display:flex;flex-direction:column;"><section style="height:112px;margin-bottom:6px;overflow:hidden;">'
-            : '<section style="height:112px;overflow:hidden;">',
+            ? '<section style="flex:1;display:flex;flex-direction:column;"><section style="margin-bottom:1.2%;">'
+            : '<section>',
         close: i === 2 ? '</section></section>' : '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        image: 'height:auto;box-sizing:border-box;',
       }
     }
 
     if (count === 4) {
       if (i === 0) {
         return {
-          open: '<section style="height:190px;margin-bottom:6px;overflow:hidden;">',
+          open: '<section style="margin-bottom:1.2%;">',
           close: '</section>',
-          image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+          image: 'height:auto;box-sizing:border-box;',
         }
       }
       return {
         open:
           i === 1
-            ? '<section style="display:flex;justify-content:space-between;"><section style="width:32%;height:116px;overflow:hidden;">'
-            : '<section style="width:32%;height:116px;overflow:hidden;">',
+            ? `<section style="display:flex;justify-content:space-between;"><section style="width:${gw || 32}%;">`
+            : `<section style="width:${gw || 32}%;">`,
         close: i === 3 ? '</section></section>' : '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        image: 'height:auto;box-sizing:border-box;',
       }
     }
 
@@ -351,31 +520,31 @@ function createMd(theme, opts) {
     if (i === 0) {
       return {
         open:
-          '<section style="display:flex;margin-bottom:6px;"><section style="width:62%;height:224px;margin-right:6px;overflow:hidden;">',
+          `<section style="display:flex;margin-bottom:1.2%;"><section style="width:${gw || 62}%;margin-right:1.2%;">`,
         close: '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        image: 'height:auto;box-sizing:border-box;',
       }
     }
     if (i === 1 || i === 2) {
       return {
         open:
           i === 1
-            ? '<section style="flex:1;display:flex;flex-direction:column;"><section style="height:109px;margin-bottom:6px;overflow:hidden;">'
-            : '<section style="height:109px;overflow:hidden;">',
+            ? '<section style="flex:1;display:flex;flex-direction:column;"><section style="margin-bottom:1.2%;">'
+            : '<section>',
         close: i === 2 ? '</section></section></section>' : '</section>',
-        image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+        image: 'height:auto;box-sizing:border-box;',
       }
     }
 
     const remaining = count - 3
-    const width = remaining === 3 ? '32%' : '49%'
+    const fallbackWidth = remaining === 3 ? '32%' : '49%'
     return {
       open:
         i === 3
-          ? `<section style="display:flex;flex-wrap:wrap;justify-content:space-between;"><section style="width:${width};height:132px;margin-bottom:6px;overflow:hidden;">`
-          : `<section style="width:${width};height:132px;margin-bottom:6px;overflow:hidden;">`,
+          ? `<section style="display:flex;flex-wrap:wrap;justify-content:space-between;"><section style="width:${gw || fallbackWidth};margin-bottom:1.2%;">`
+          : `<section style="width:${gw || fallbackWidth};margin-bottom:1.2%;">`,
       close: i === count - 1 ? '</section></section>' : '</section>',
-      image: 'height:100%;object-fit:cover;box-sizing:border-box;',
+      image: 'height:auto;box-sizing:border-box;',
     }
   }
 
@@ -438,7 +607,8 @@ function createMd(theme, opts) {
       const count = Number(countStr)
       if (pos === 'wrap') return galleryContainer(tokens[idx], count)
       const i = Number(pos)
-      return `${i === 0 ? galleryContainer(tokens[idx], count) : ''}${galleryItemParts(count, i).open}`
+      const gw = tokens[idx + 1]?.children?.[0]?.attrGet('data-gw') || ''
+      return `${i === 0 ? galleryContainer(tokens[idx], count) : ''}${galleryItemParts(count, i, gw).open}`
     }
     // 引用块 / 宽松列表项里的段落使用各自样式，避免普通正文的首行缩进、
     // 对齐和横向边距污染嵌套结构。
@@ -519,17 +689,21 @@ function createMd(theme, opts) {
     const title = token.attrGet('title')
     const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : ''
     const gi = token.attrGet('data-gi')
+    const gw = token.attrGet('data-gw') || ''
+    // 焦点区右列裁切填充：固定比例 + cover，使右列总高恒等于左图高
+    const gr = token.attrGet('data-gr')
+    const grStyle = gr ? `aspect-ratio:${escapeHtmlAttr(gr)};object-fit:cover;` : ''
     if (gi?.startsWith('plain:')) {
       const [, countStr, pos] = gi.split(':')
-      const parts = galleryItemParts(Number(countStr), Number(pos))
-      return `<img${dl(token)} src="${src}" alt="${esc(alt)}"${titleAttr} style="${escapeHtmlAttr(`${styles.galleryImg}${parts.image}`)}"/>`
+      const parts = galleryItemParts(Number(countStr), Number(pos), gw)
+      return `<img${dl(token)} src="${src}" alt="${esc(alt)}"${titleAttr} decoding="async" style="${escapeHtmlAttr(`${styles.galleryImg}${parts.image}${grStyle}`)}"/>`
     }
     if (gi) {
       const [count, i] = gi.split(':').map(Number)
-      const parts = galleryItemParts(count, i)
-      return `${parts.open}<img src="${src}" alt="${esc(alt)}"${titleAttr} style="${escapeHtmlAttr(`${styles.galleryImg}${parts.image}`)}"/>${parts.close}`
+      const parts = galleryItemParts(count, i, gw)
+      return `${parts.open}<img src="${src}" alt="${esc(alt)}"${titleAttr} decoding="async" style="${escapeHtmlAttr(`${styles.galleryImg}${parts.image}${grStyle}`)}"/>${parts.close}`
     }
-    const imgTag = `<img${dl(token)} src="${src}" alt="${esc(alt)}"${titleAttr} style="${escapeHtmlAttr(styles.img)}"/>`
+    const imgTag = `<img${dl(token)} src="${src}" alt="${esc(alt)}"${titleAttr} decoding="async" style="${escapeHtmlAttr(styles.img)}"/>`
     if (!alt.trim()) return imgTag
     return `${imgTag}<span style="${escapeHtmlAttr(styles.caption)}">${esc(alt)}</span>`
   }
@@ -570,6 +744,9 @@ function createMd(theme, opts) {
   return { md, styles }
 }
 
+// 最近一次渲染的主题样式：复制链路替换视频占位卡时复用同款外观
+let lastThemeStyles = null
+
 export function renderMarkdown(src, theme, opts = {}) {
   const key = [
     theme.id,
@@ -579,6 +756,7 @@ export function renderMarkdown(src, theme, opts = {}) {
     opts.fontFamily || '',
     opts.macCode ? 1 : 0,
     normalizeGalleryMode(opts.galleryMode),
+    normalizeGalleryRatio(opts.galleryRatio),
     JSON.stringify(opts.custom || {}),
   ].join('|')
   let entry = cache.get(key)
@@ -591,10 +769,19 @@ export function renderMarkdown(src, theme, opts = {}) {
     cache.set(key, entry)
     if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value)
   }
+  lastThemeStyles = entry.styles
   return `<section style="${escapeHtmlAttr(entry.styles.container)}">${entry.md.render(src)}</section>`
 }
 
-// 复制前剥离预览专用标记
+// 复制前剥离预览专用标记（行号、画廊模式标记等对文章无意义）
 export function stripPreviewMeta(html) {
-  return html.replace(/ data-line="\d+"/g, '')
+  return html
+    .replace(/ data-line="\d+"/g, '')
+    .replace(/ data-gallery-mode="[^"]*"/g, '')
+}
+
+// 复制链路用的视频占位卡：与最近一次渲染同款外观。调用方在把 data-lv 区块
+// 替换为占位卡时使用（视频是否内联由应用侧按大小阈值决定）。
+export function copyVideoPlaceholder() {
+  return buildVideoPlaceholder(lastThemeStyles?.video || '', { note: '本地视频文件（未内联）' })
 }

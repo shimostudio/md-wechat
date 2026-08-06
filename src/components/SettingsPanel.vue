@@ -66,6 +66,23 @@
         <div class="s-hint">{{ activeGalleryMode.hint }}</div>
       </div>
 
+      <div class="s-row">
+        <div class="s-label">网格比例</div>
+        <div class="s-seg">
+          <button
+            v-for="r in ratioOptions"
+            :key="r.value"
+            type="button"
+            :class="{ active: galleryRatio === r.value }"
+            :title="r.hint"
+            @click="store.settings.galleryRatio = r.value"
+          >
+            {{ r.name }}
+          </button>
+        </div>
+        <div class="s-hint">仅「网格」模式生效：所有网格图统一裁切为该比例</div>
+      </div>
+
       <div class="s-divider"></div>
 
       <button class="advanced-trigger" type="button" :aria-expanded="customOpen" @click="customOpen = !customOpen">
@@ -168,7 +185,7 @@ const hintPopPos = ref({ left: '0px', top: '0px', width: '280px' })
 const HINTS = {
   storage:
     '媒体只存在本浏览器，不再被引用的文件会自动清理（回收站引用保留）。复制时媒体按总字节 ×1.3 转文本带走：图片建议 ≤2MB、视频 ≤100MB，总大小过大可能复制卡顿或粘贴失败，建议先压缩。',
-  host: '凭据只保存在本浏览器。上传后媒体引用会替换为公网链接，不再受复制体积限制，适合大图与大视频。',
+  host: '凭据只保存在本浏览器的 localStorage（明文）。上传后媒体引用会替换为公网链接，不再受复制体积限制，适合大图与大视频。请勿在公用电脑上配置 Token。',
   always:
     '开启后粘贴即上传并插入公网链接，失败回落本地。已有本地媒体可在预览工具条点「上传到图床」一键替换。',
 }
@@ -255,6 +272,13 @@ const galleryMode = computed(() => store.settings.galleryMode || 'collage')
 const activeGalleryMode = computed(
   () => galleryModes.find((mode) => mode.id === galleryMode.value) || galleryModes[0]
 )
+
+const ratioOptions = [
+  { value: '1:1', name: '1:1', hint: '正方形网格（推荐，公众号已实测支持）' },
+  { value: '4:5', name: '4:5', hint: '竖版社交卡片比例' },
+  { value: '3:4', name: '3:4', hint: '竖版经典比例' },
+]
+const galleryRatio = computed(() => store.settings.galleryRatio || '1:1')
 
 const editableElements = [
   { key: 'container', name: '正文容器' },

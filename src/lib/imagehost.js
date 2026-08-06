@@ -9,6 +9,20 @@ export function extractUrl(data, path) {
   return typeof value === 'string' && value.startsWith('http') ? value : null
 }
 
+// Blob → base64（不带 data: 前缀）。用 FileReader 而不是逐字节拼接，
+// 大文件（视频）也能高效转换，不会把页面卡死。
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
 export const IMAGE_HOSTS = [
   {
     id: 'smms',
@@ -38,15 +52,15 @@ export const IMAGE_HOSTS = [
     ],
     async upload(blob, config, filename) {
       if (!config.repo || !config.token) throw new Error('未填写仓库或 Token')
+      // GitHub Contents API 单文件上限 100MB；超大文件先拦截，避免白传
+      if (blob.size > 100 * 1024 * 1024) throw new Error('GitHub 仓库单文件上限 100MB，请压缩后再上传')
       const branch = config.branch || 'main'
       const path = `uploads/${Date.now()}-${filename}`
-      const bytes = new Uint8Array(await blob.arrayBuffer())
-      let bin = ''
-      for (const b of bytes) bin += String.fromCharCode(b)
+      const content = await blobToBase64(blob)
       const res = await fetch(`https://api.github.com/repos/${config.repo}/contents/${path}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `upload ${filename}`, content: btoa(bin), branch }),
+        body: JSON.stringify({ message: `upload ${filename}`, content, branch }),
       })
       if (!res.ok) throw new Error(`GitHub 返回 HTTP ${res.status}`)
       return `https://cdn.jsdelivr.net/gh/${config.repo}@${branch}/${path}`

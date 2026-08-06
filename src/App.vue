@@ -134,9 +134,9 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import PreviewBar from './components/PreviewBar.vue'
 import Toolbar from './components/Toolbar.vue'
 import Editor from './components/Editor.vue'
-import { store, theme, notify, restoreDocument, createDocument, importContents } from './lib/store.js'
+import { store, theme, notify, docTitle, countChars, restoreDocument, createDocument, importContents, registerImageAspect, getImageAspect, setGalleryOverride, clearGalleryOverride } from './lib/store.js'
 import { themes } from './lib/themes.js'
-import { renderMarkdown, stripPreviewMeta } from './lib/renderer.js'
+import { renderMarkdown, stripPreviewMeta, copyVideoPlaceholder } from './lib/renderer.js'
 import { copyRichText, copyText } from './lib/clipboard.js'
 import { getImage, blobToDataUrl, getCachedImageEntries } from './lib/imagedb.js'
 import { sample, samples } from './lib/sample.js'
@@ -187,6 +187,7 @@ function switchDevice(value) {
 
 const html = computed(() => {
   store.imageCacheVersion // 图片缓存预热完成后触发重渲染
+  store.aspectVersion // 图片比例学习到新值后重渲染（对齐式画廊）
   return renderMarkdown(store.md, renderTheme.value, {
     ...store.settings,
     accent: store.settings.accentByTheme?.[renderTheme.value.id] || null,
@@ -194,12 +195,9 @@ const html = computed(() => {
     custom: (store.settings.custom || {})[renderTheme.value.id],
   })
 })
-const charCount = computed(() => store.md.replace(/\s/g, '').length)
+const charCount = computed(() => countChars(store.md))
 const readMinutes = computed(() => Math.max(1, Math.ceil(charCount.value / 400)))
-const documentTitle = computed(() => {
-  const match = store.md.match(/^#\s+(.+?)\s*$/m)
-  return (match?.[1] || '未命名文章').replace(/[*_`~[\]]/g, '').trim()
-})
+const documentTitle = computed(() => docTitle(store.md))
 
 const frameUrl = (file) => `${import.meta.env.BASE_URL}device-frames/${file}`
 
@@ -279,13 +277,27 @@ function rebuildBlocks() {
     line: Number(el.dataset.line),
     el,
   }))
+  // 内容高度变化可能改变"谁是滚动容器"（不满一屏 ↔ 超一屏），滚动缓存作废
+  resetSyncCache()
 }
 
 watch(html, () => nextTick(rebuildBlocks))
+
+// 图片比例学习与画廊自动微调：输入停顿 120ms 后再跑，避免每次击键都
+// 触发一轮 DOM 测量与异步等待（外链图未加载时要挂起等待）。
+let mediaPassTimer = null
+watch(html, () => {
+  clearTimeout(mediaPassTimer)
+  mediaPassTimer = window.setTimeout(runMediaPass, 120)
+})
+async function runMediaPass() {
+  await collectImageAspects()
+}
 watch(viewMode, () =>
   nextTick(() => {
     measurePreviewFrame()
     rebuildBlocks()
+    resetSyncCache()
   })
 )
 watch(
@@ -294,6 +306,7 @@ watch(
     nextTick(() => {
       measurePreviewFrame()
       rebuildBlocks()
+      resetSyncCache()
     })
 )
 
@@ -308,9 +321,30 @@ function findScroller(el) {
   return null
 }
 
+// 同步滚动的缓存：滚动容器与它的视口位置在布局不变时是常量。
+// 每帧都 findScroller/getComputedStyle/量容器 rect 会强制样式重算与布局，
+// 滚动时 CodeMirror 正在增删虚拟行 DOM，代价尤其高——卡顿的主要来源。
+let syncBox = null
+let syncBoxTop = 0
+
+function resetSyncCache() {
+  syncBox = null
+}
+
+// 跟随滚动是主线程逐帧重绘，图片多时每帧成本可能超过 16ms。
+// 同步滚动是"行级跳转"而非逐像素，隔帧同步（30fps）视觉无感，
+// 预览每帧渲染预算翻倍，帧率感受显著提升。
+let syncFrame = 0
+
 function onEditorScroll(line) {
-  const box = findScroller(previewViewport.value)
-  if (!box || !blocks.length) return
+  syncFrame = (syncFrame + 1) % 2
+  if (syncFrame) return
+  if (!blocks.length) return
+  if (!syncBox) {
+    syncBox = findScroller(previewViewport.value)
+    if (!syncBox) return
+    syncBoxTop = syncBox.getBoundingClientRect().top
+  }
   let lo = 0
   let hi = blocks.length - 1
   let ans = -1
@@ -324,16 +358,17 @@ function onEditorScroll(line) {
     }
   }
   if (ans === -1) {
-    box.scrollTop = 0
+    if (syncBox.scrollTop !== 0) syncBox.scrollTop = 0
     return
   }
   const { el } = blocks[ans]
   const scale = activePreviewMode.value.value === 'full' ? 1 : previewScale.value || 1
   const top =
-    (el.getBoundingClientRect().top - box.getBoundingClientRect().top) / scale +
-    box.scrollTop -
-    20
-  box.scrollTop = Math.max(0, top)
+    (el.getBoundingClientRect().top - syncBoxTop) / scale + syncBox.scrollTop - 20
+  const next = Math.max(0, top)
+  // 行级同步：同一行内滚动时目标不变，跳过写入避免无谓重排
+  if (Math.abs(syncBox.scrollTop - next) < 0.5) return
+  syncBox.scrollTop = next
 }
 
 // 预览点击定位：找到带 data-line 的块，切回对照并把编辑器光标送到对应源码行
@@ -348,6 +383,8 @@ function onPreviewClick(event) {
 }
 
 function measurePreviewFrame() {
+  // 布局变化（窗口缩放、设备切换）后滚动缓存作废
+  resetSyncCache()
   const stage = previewStage.value
   const mode = activePreviewMode.value
   if (!stage || !mode.width || !mode.height) {
@@ -379,17 +416,27 @@ function stopDrag() {
 function startDrag(ev) {
   if (ev.button !== 0) return
   ev.preventDefault()
+  // 指针捕获：拖出浏览器窗口外松手也能收到 pointerup，避免拖拽状态卡死；
+  // 触摸设备上配合 .divider 的 touch-action:none 才能正常拖动
+  try {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+  } catch {
+    // 指针已释放等场景下捕获失败，忽略
+  }
   document.body.classList.add('col-resizing')
   setEditorPct(ev.clientX)
   const move = (event) => setEditorPct(event.clientX)
-  const up = () => stopDrag()
+  const end = () => stopDrag()
   window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointercancel', up)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
+  // 失焦兜底（切换窗口等场景）
+  window.addEventListener('blur', end)
   dragCleanup = () => {
     window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointercancel', up)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    window.removeEventListener('blur', end)
   }
 }
 
@@ -399,12 +446,257 @@ function resizeBy(delta) {
 
 // ---- 复制 / 导入导出 / 样章 ----
 
+// 量取预览中画廊图片的宽高比并注册（blob: 反查回 local: 引用），
+// 供对齐式画廊按各图比例分配宽度；学到新值会触发一次重渲染。
+function rawSrcKey(src) {
+  if (src.startsWith('blob:')) {
+    const hit = getCachedImageEntries().find(([, url]) => url === src)
+    if (hit) return `local:${hit[0]}`
+  }
+  return src
+}
+
+async function collectImageAspects() {
+  const imgs = [...document.querySelectorAll('.wechat-chrome [data-gallery-mode] img')]
+  let learned = 0
+  // 并行等待未加载完成的图（同一文档里的图同时下载），单张超时 1.5s 兜底
+  await Promise.all(
+    imgs.map(async (img) => {
+      if (!img.naturalWidth) {
+        await new Promise((res) => {
+          let settled = false
+          const finish = () => {
+            if (settled) return
+            settled = true
+            img.onload = null
+            img.onerror = null
+            res()
+          }
+          img.onload = finish
+          img.onerror = finish
+          window.setTimeout(finish, 1500)
+        })
+      }
+      if (!img.naturalWidth || !img.naturalHeight) return
+      if (registerImageAspect(rawSrcKey(img.getAttribute('src') || ''), img.naturalWidth, img.naturalHeight)) {
+        learned += 1
+      }
+    })
+  )
+  if (learned) store.aspectVersion += 1
+}
+
+// ---- 画廊拖拽微调：拖动两格之间的边界，松手自动对齐，覆盖值按图片地址记忆 ----
+// 对齐采用解析解而非实测反解：同排同高的齐平宽度是各图宽高比的纯函数，
+// 按下时算一次即为常数，吸附不会因布局反馈而振荡（旧实现的乱跳根源）。
+
+// 右列内两图等宽堆叠、间隙为右列宽的 1.2%——与渲染器 justifiedWidths 的公式
+// 同源同参数，保证"吸附位置"就是"渲染器默认对齐位置"。
+function aspectOfImg(img) {
+  const v = Number(getImageAspect(rawSrcKey(img.getAttribute('src') || '')))
+  return Number.isFinite(v) && v > 0.1 && v < 10 ? v : 4 / 3
+}
+
+// 两格并排排的解析齐平解：左格宽度百分比，使左格底边与右列（单图或多图）精确齐平
+function flushPctOf(c0Img, c1Imgs) {
+  if (!c0Img || !c1Imgs.length) return null
+  const a0 = aspectOfImg(c0Img)
+  const rest = c1Imgs.map((im) => aspectOfImg(im)).filter((a) => a > 0)
+  if (!rest.length) return null
+  const S = rest.reduce((sum, a) => sum + 1 / a, 0) + (rest.length > 1 ? 0.012 : 0)
+  const pct = ((100 - 1.2) * S) / (1 / a0 + S)
+  return Math.min(85, Math.max(15, Math.round(pct * 100) / 100))
+}
+
+let galDrag = null
+let galMoveRaf = 0
+
+function onGalleryPointerDown(e) {
+  if (e.button !== 0) return
+  const img = e.target.closest?.('.wechat-chrome [data-gallery-mode] img')
+  if (!img) return
+  const cell = img.closest('section')
+  const row = cell?.parentElement
+  // 只处理恰好两格、且左右并排的排（两图画廊 / 三图拼贴的左大图与右列）。
+  // 四图以上拼贴的“整行 + 下行”也是两个 section，但不是并排，拖它们会改坏布局。
+  if (!row || !row.hasAttribute('data-gallery-mode')) return
+  // 网格与单列是均分/整幅语义，宽度没有自由度，不提供手动微调
+  if (row.dataset.galleryMode === 'grid' || row.dataset.galleryMode === 'stack') return
+  const cells = [...row.children].filter((el) => el.tagName === 'SECTION')
+  if (cells.length !== 2 || !cells.includes(cell)) return
+  if (Math.abs(cells[0].getBoundingClientRect().top - cells[1].getBoundingClientRect().top) > 4) return
+  // 指针捕获：拖出窗口外松手也能收尾，配合 touch-action:none 支持触摸拖动
+  try {
+    row.setPointerCapture?.(e.pointerId)
+  } catch {
+    // 指针已释放等场景下捕获失败，忽略
+  }
+  // 按下即显示高亮边框，明确当前调整的是哪一排
+  row.classList.add('gal-active')
+  // 统一调整左格宽度（右格 flex 自动补位），点哪边拖都一样
+  const [c0, c1] = cells
+  const c0Img = c0.querySelector('img')
+  const c1Imgs = [...c1.querySelectorAll('img')]
+  // 右列多图 = 裁切填充结构（三图/焦点区）：任何宽度都齐平，拖拽完全自由；
+  // 右列单图 = 同高并排（两图画廊）：吸附到解析齐平解（常数，永不振荡）
+  const alignedPct = flushPctOf(c0Img, c1Imgs)
+  galDrag = {
+    keyImg: c0Img,
+    c1Imgs,
+    a0: aspectOfImg(c0Img),
+    free: c1Imgs.length > 1,
+    c0,
+    c1,
+    row,
+    startX: e.clientX,
+    startW: c0.getBoundingClientRect().width,
+    rowW: row.getBoundingClientRect().width,
+    alignedPct,
+    moved: false,
+    pct: null,
+    snapped: false,
+  }
+  const move = (ev) => {
+    if (galMoveRaf) return
+    // rAF 节流：鼠标高频事件只按帧处理，拖动更流畅
+    galMoveRaf = requestAnimationFrame(() => {
+      galMoveRaf = 0
+      onGalleryPointerMove(ev)
+    })
+  }
+  const end = () => {
+    cancelAnimationFrame(galMoveRaf)
+    galMoveRaf = 0
+    onGalleryPointerUp()
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    window.removeEventListener('blur', end)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
+  // 失焦兜底（切换窗口等场景）
+  window.addEventListener('blur', end)
+}
+
+function onGalleryPointerMove(e) {
+  const d = galDrag
+  if (!d) return
+  const dx = e.clientX - d.startX
+  if (!d.moved && Math.abs(dx) < 6) return
+  if (!d.moved) {
+    d.row.classList.add('gal-active')
+    document.body.style.cursor = 'ew-resize'
+    // 拖动期间禁止选中正文（CSS 里 user-select: none）
+    document.body.classList.add('gal-dragging')
+  }
+  d.moved = true
+  e.preventDefault()
+  let pct = Math.min(85, Math.max(15, ((d.startW + dx) / d.rowW) * 100))
+  if (d.free) {
+    // 右列裁切填充：左图拖到任何宽度，右列实时裁切匹配，底边始终齐平
+    applyRightColumn(d, pct)
+    d.snapped = false
+    d.row.classList.remove('gal-snapped')
+  } else {
+    // 两格同高排：吸附到解析齐平解（常数，无布局反馈，不会振荡）。
+    // 靠近吸住、拉远才松开（迟滞）；阈值 2% ≈ 手机上约 8px 底边差
+    if (d.alignedPct != null) {
+      const err = Math.abs(pct - d.alignedPct)
+      if (d.snapped ? err > 5 : err < 2) d.snapped = !d.snapped
+      if (d.snapped) pct = d.alignedPct
+      d.row.classList.toggle('gal-snapped', d.snapped)
+    }
+  }
+  d.pct = pct
+  d.c0.style.width = `${pct}%`
+}
+
+// 拖拽中实时更新右列两图的裁切比例（与渲染器 rightColumnRatio 同公式）
+function applyRightColumn(d, pct) {
+  if (!d.a0) return
+  const leftH = pct / d.a0
+  const rightW = 100 - 1.2 - pct
+  const itemH = (leftH - 1.2) / 2
+  if (!(rightW > 5) || !(itemH > 5)) return
+  const ratio = `${Math.round(rightW * 100) / 100}/${Math.round(itemH * 100) / 100}`
+  for (const im of d.c1Imgs) im.style.aspectRatio = ratio
+}
+
+function onGalleryPointerUp() {
+  const d = galDrag
+  galDrag = null
+  if (!d) return
+  d.row.classList.remove('gal-active', 'gal-snapped')
+  document.body.style.cursor = ''
+  document.body.classList.remove('gal-dragging')
+  if (!d.moved) return
+  if (d.pct != null) {
+    setGalleryOverride(rawSrcKey(d.keyImg?.getAttribute('src') || ''), d.pct)
+    // 两格同高排拖出吸附带：保留用户位置，明确告知如何恢复对齐；
+    // 裁切填充结构（free）永远齐平，无需提示
+    if (!d.free && !d.snapped) notify('已调整宽度（双击图片可恢复自动对齐）')
+  }
+  // 抑制拖拽后的 click 触发预览定位
+  const swallow = (ev) => {
+    ev.stopPropagation()
+    ev.preventDefault()
+  }
+  document.addEventListener('click', swallow, { capture: true, once: true })
+}
+
+function onGalleryDblClick(e) {
+  const img = e.target.closest?.('.wechat-chrome [data-gallery-mode] img')
+  if (!img) return
+  if (clearGalleryOverride(rawSrcKey(img.getAttribute('src') || ''))) notify('已恢复自动对齐')
+}
+
+// 本地视频的复制策略：≤ 阈值的视频内联成 data URI 随 HTML 带走；
+// 超过阈值的内联会让 clipboard 写入失败甚至卡死页面，统一转为占位卡。
+// （公众号后台能否接受内联的 <video> 需实测；若无效，把阈值调为 0 即全部占位。）
+const INLINE_VIDEO_LIMIT = 10 * 1024 * 1024 // 10MB
+
+async function replaceLargeVideos(htmlText) {
+  if (!htmlText.includes('data-lv="1"')) return htmlText
+  const sectionRe = /<section[^>]*data-lv="1"[^>]*>[\s\S]*?<\/section>/g
+  const srcRe = /<video[^>]*src="([^"]+)"/i
+  const jobs = []
+  htmlText = htmlText.replace(sectionRe, (block) => {
+    const m = block.match(srcRe)
+    jobs.push({ block, src: m?.[1] || '' })
+    return block // 先占位，异步判断大小后再决定替换
+  })
+  const replace = new Map()
+  await Promise.all(
+    jobs.map(async (job) => {
+      const id = rawSrcKey(job.src) // blob: 反查回 local:vid-xxx
+      let size = 0
+      if (id.startsWith('local:')) {
+        const blob = await getImage(id.slice('local:'.length))
+        size = blob?.size || 0
+      }
+      // 拿不到 blob（已清理）也转占位，避免复制出死链接
+      if (!id.startsWith('local:') || size > INLINE_VIDEO_LIMIT) {
+        replace.set(job.block, copyVideoPlaceholder())
+      }
+    })
+  )
+  for (const [from, to] of replace) htmlText = htmlText.split(from).join(to)
+  return htmlText
+}
+
 async function doCopy() {
-  const ok = await copyRichText(await inlineLocalImages(stripPreviewMeta(html.value)))
+  await collectImageAspects()
+  await nextTick()
+  // 先剥离预览标记、按大小处理视频，再内联 blob 图片（避免处理巨型 base64 字符串）
+  let htmlText = stripPreviewMeta(html.value)
+  htmlText = await replaceLargeVideos(htmlText)
+  const ok = await copyRichText(await inlineLocalImages(htmlText))
   notify(ok ? '排版已复制，可以去公众号后台粘贴了' : '复制失败，请手动全选预览内容')
 }
 
-// 把 HTML 里图片、视频的 blob: 链接统一还原成 data URI
+// 把 HTML 里图片、小视频的 blob: 链接统一还原成 data URI
 // （公众号无法读取 blob: 链接，粘贴时需要真实媒体数据）
 async function inlineLocalImages(htmlText) {
   for (const [id, url] of getCachedImageEntries()) {
@@ -417,7 +709,9 @@ async function inlineLocalImages(htmlText) {
 }
 
 async function copySource() {
-  const ok = await copyText(await inlineLocalImages(stripPreviewMeta(html.value)))
+  let htmlText = stripPreviewMeta(html.value)
+  htmlText = await replaceLargeVideos(htmlText)
+  const ok = await copyText(await inlineLocalImages(htmlText))
   notify(ok ? 'HTML 源码已复制' : '复制失败')
 }
 
@@ -489,17 +783,23 @@ let previewResizeObserver = null
 
 onMounted(() => {
   window.addEventListener('keydown', onKey)
+  document.addEventListener('pointerdown', onGalleryPointerDown)
+  document.addEventListener('dblclick', onGalleryDblClick)
   previewResizeObserver = new ResizeObserver(measurePreviewFrame)
   if (previewStage.value) previewResizeObserver.observe(previewStage.value)
   nextTick(() => {
     measurePreviewFrame()
     rebuildBlocks()
+    collectImageAspects()
   })
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
+  document.removeEventListener('pointerdown', onGalleryPointerDown)
+  document.removeEventListener('dblclick', onGalleryDblClick)
   previewResizeObserver?.disconnect()
+  clearTimeout(mediaPassTimer)
   stopDrag()
 })
 </script>
