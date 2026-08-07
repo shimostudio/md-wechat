@@ -24,6 +24,32 @@
   --header-height: 68px;
 }
 
+/* 顶部进度条（nprogress 风格）：上传等耗时操作期间显示 */
+.app-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.app-progress.on {
+  opacity: 1;
+}
+
+.app-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--brand);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px var(--brand);
+  transition: width 0.22s ease-out;
+}
+
 * {
   box-sizing: border-box;
 }

@@ -131,6 +131,7 @@ import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import { store, imageHostReady, uploadDocMedia, notify } from '../lib/store.js'
 import { samples } from '../lib/sample.js'
+import { startProgress, doneProgress } from '../lib/progress.js'
 
 const props = defineProps({
   viewMode: { type: String, default: 'split' },
@@ -154,6 +155,7 @@ const uploading = ref(false)
 async function uploadAll(kind) {
   upOpen.value = false
   uploading.value = true
+  startProgress()
   try {
     const label = kind === 'video' ? '视频' : '图片'
     const { done, failed, total } = await uploadDocMedia(store.activeDocId, kind)
@@ -165,6 +167,7 @@ async function uploadAll(kind) {
     }
   } finally {
     uploading.value = false
+    doneProgress()
   }
 }
 

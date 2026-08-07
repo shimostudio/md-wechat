@@ -10,6 +10,7 @@ import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { store, notify, shouldAutoUpload, uploadBlobToHost } from '../lib/store.js'
 import { putImage, cacheImage } from '../lib/imagedb.js'
+import { startProgress, doneProgress } from '../lib/progress.js'
 
 // 首次粘贴媒体时把建议和成功提示合并成一条（持久化标记，建议只出现一次）
 function mediaNotify(baseMsg) {
@@ -191,6 +192,7 @@ async function insertImageFile(file) {
   try {
     const blob = await compressImage(file)
     if (shouldAutoUpload('image')) {
+      startProgress()
       try {
         const url = await uploadBlobToHost(blob, `paste-${Date.now().toString(36)}.jpg`)
         const { from, to } = view.state.selection.main
@@ -203,6 +205,8 @@ async function insertImageFile(file) {
         return
       } catch {
         notify('图床上传失败，已改为本地存储')
+      } finally {
+        doneProgress()
       }
     }
     const id = `img-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -231,6 +235,7 @@ async function insertVideoFile(file) {
   }
   try {
     if (shouldAutoUpload('video')) {
+      startProgress()
       try {
         const ext = file.type.split('/')[1] || 'mp4'
         const url = await uploadBlobToHost(file, `paste-${Date.now().toString(36)}.${ext}`)
@@ -241,6 +246,8 @@ async function insertVideoFile(file) {
         return
       } catch {
         notify('图床上传失败，已改为本地存储')
+      } finally {
+        doneProgress()
       }
     }
     const id = `vid-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
