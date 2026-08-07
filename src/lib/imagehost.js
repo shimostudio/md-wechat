@@ -56,12 +56,19 @@ export const IMAGE_HOSTS = [
       // GitHub Contents API 单文件上限 100MB；超大文件先拦截，避免白传
       if (blob.size > 100 * 1024 * 1024) throw new Error('GitHub 仓库单文件上限 100MB，请压缩后再上传')
       const branch = config.branch || 'main'
-      const path = `uploads/${Date.now()}-${filename}`
+      // 按 年/月/日 分文件夹存放；文件名保留时间戳前缀，避免同一天重名覆盖
+      const d = new Date()
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const path = `${yyyy}/${mm}/${dd}/${Date.now()}-${filename}`
       const content = await blobToBase64(blob)
+      // commit 信息带上本次上传文件的 GitHub 链接（随 repo/分支/路径动态生成，不写死）
+      const fileUrl = `https://github.com/${config.repo}/blob/${branch}/${path}`
       const res = await fetch(`https://api.github.com/repos/${config.repo}/contents/${path}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `upload ${filename}`, content, branch }),
+        body: JSON.stringify({ message: `Upload by ${fileUrl}`, content, branch }),
       })
       if (!res.ok) throw new Error(`GitHub 返回 HTTP ${res.status}`)
       // 开启 CDN 加速时走 fastly.jsdelivr.net，否则用默认 cdn.jsdelivr.net
