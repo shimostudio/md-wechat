@@ -136,14 +136,20 @@
         </select>
         <template v-if="activeHost">
           <div v-for="f in activeHost.fields" :key="f.key">
-            <div class="s-hint">{{ f.label }}</div>
-            <input
-              v-model="store.settings.imageHost.config[f.key]"
-              class="s-select-input"
-              :type="f.secret ? 'password' : 'text'"
-              :placeholder="f.placeholder"
-              :aria-label="f.label"
-            />
+            <label v-if="f.type === 'checkbox'" class="s-checkbox-row">
+              <input v-model="store.settings.imageHost.config[f.key]" type="checkbox" :aria-label="f.label" />
+              <span>{{ f.label }}</span>
+            </label>
+            <template v-else>
+              <div class="s-hint">{{ f.label }}</div>
+              <input
+                v-model="store.settings.imageHost.config[f.key]"
+                class="s-select-input"
+                :type="f.secret ? 'password' : 'text'"
+                :placeholder="f.placeholder"
+                :aria-label="f.label"
+              />
+            </template>
           </div>
           <div class="s-label">
             粘贴时自动上传

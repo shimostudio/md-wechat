@@ -49,6 +49,7 @@ export const IMAGE_HOSTS = [
       { key: 'repo', label: '仓库', placeholder: '如 laogou717/imgs' },
       { key: 'token', label: 'Token', secret: true, placeholder: '含 repo 权限的 Personal Access Token' },
       { key: 'branch', label: '分支（可选）', placeholder: '默认 main' },
+      { key: 'cdn', label: '开启 CDN 加速（fastly.jsdelivr.net）', type: 'checkbox' },
     ],
     async upload(blob, config, filename) {
       if (!config.repo || !config.token) throw new Error('未填写仓库或 Token')
@@ -63,7 +64,9 @@ export const IMAGE_HOSTS = [
         body: JSON.stringify({ message: `upload ${filename}`, content, branch }),
       })
       if (!res.ok) throw new Error(`GitHub 返回 HTTP ${res.status}`)
-      return `https://cdn.jsdelivr.net/gh/${config.repo}@${branch}/${path}`
+      // 开启 CDN 加速时走 fastly.jsdelivr.net，否则用默认 cdn.jsdelivr.net
+      const base = config.cdn ? 'https://fastly.jsdelivr.net/gh' : 'https://cdn.jsdelivr.net/gh'
+      return `${base}/${config.repo}@${branch}/${path}`
     },
   },
   {
