@@ -254,6 +254,43 @@ function rightColumnRatio(leftW, a0) {
   return `${Math.round(rightW * 100) / 100}:${Math.round(itemH * 100) / 100}`
 }
 
+// 把高亮后的 HTML 按行拆开，span 标签在行尾闭合、下一行重新打开。
+// 公众号粘贴会把 <pre> 里的 \n 拆散成独立段落导致换行错乱/内容丢失，
+// 逐行块级 <code> 不存在 \n，就没有被拆的可能。
+function splitCodeLines(html) {
+  const lines = []
+  const open = []
+  let cur = ''
+  let hasText = false
+  const flush = () => {
+    const body = cur + open.map(() => '</span>').join('')
+    lines.push(hasText ? body : '&nbsp;')
+    cur = open.join('')
+    hasText = false
+  }
+  let i = 0
+  while (i < html.length) {
+    const ch = html[i]
+    if (ch === '<') {
+      const end = html.indexOf('>', i)
+      const tag = html.slice(i, end + 1)
+      if (tag.startsWith('</')) open.pop()
+      else open.push(tag)
+      cur += tag
+      i = end + 1
+    } else if (ch === '\n') {
+      flush()
+      i++
+    } else {
+      cur += ch
+      if (!/\s/.test(ch)) hasText = true
+      i++
+    }
+  }
+  if (cur && (hasText || lines.length === 0)) flush()
+  return lines
+}
+
 function createMd(theme, opts) {
   const styles = buildStyles(theme, opts)
   const chrome = CODE_CHROME[theme.codeTheme] || CODE_CHROME.dark
@@ -549,7 +586,7 @@ function createMd(theme, opts) {
   }
 
   const codeStyle =
-    `font-family:Menlo,Consolas,'Courier New',monospace;font-size:13px;line-height:1.7;` +
+    `font-family:Menlo,Consolas,'Courier New',monospace;font-size:13px;line-height:1.7;text-align:left;` +
     `color:${chrome.text};white-space:pre;${styles.preCode || ''}`
 
   // Mac 风格代码窗口：三个信号灯 + 语言标签
@@ -564,9 +601,13 @@ function createMd(theme, opts) {
     const labelStyle =
       styles.preLabel ||
       `color:${chrome.label};font-size:12px;line-height:11px;margin-left:10px;vertical-align:top;`
+    // 逐行块级 <code>：不输出 <pre> 与裸 \n，公众号粘贴不会拆行/丢内容/错乱
+    const linesHtml = splitCodeLines(inner)
+      .map((line) => `<code style="${escapeHtmlAttr(`${codeStyle}display:block;`)}">${line}</code>`)
+      .join('')
 
     if (!macCode || theme.codeChrome === 'plain') {
-      return `<pre${dl(token)} style="${escapeHtmlAttr(`${frameStyle}${plainStyle}`)}"><code style="${escapeHtmlAttr(codeStyle)}">${inner}</code></pre>`
+      return `<section${dl(token)} style="${escapeHtmlAttr(`${frameStyle}${plainStyle}`)}">${linesHtml}</section>`
     }
 
     if (theme.codeChrome === 'label') {
@@ -575,22 +616,23 @@ function createMd(theme, opts) {
       return (
         `<section${dl(token)} style="${escapeHtmlAttr(frameStyle)}">` +
         `<section style="${escapeHtmlAttr(headerStyle)}"><span style="${escapeHtmlAttr(labelStyle)}">${labelText}</span></section>` +
-        `<pre style="${escapeHtmlAttr(bodyStyle)}"><code style="${escapeHtmlAttr(codeStyle)}">${inner}</code></pre>` +
+        `<section style="${escapeHtmlAttr(bodyStyle)}">${linesHtml}</section>` +
         `</section>`
       )
     }
 
+    // 三个信号灯的 span 必须带内容（&nbsp;），公众号粘贴会丢弃空元素
     const dots =
-      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#ff5f56;margin-right:7px;"></span>` +
-      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#ffbd2e;margin-right:7px;"></span>` +
-      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#27c93f;"></span>`
+      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#ff5f56;margin-right:7px;overflow:hidden;font-size:0;line-height:0;">&nbsp;</span>` +
+      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#ffbd2e;margin-right:7px;overflow:hidden;font-size:0;line-height:0;">&nbsp;</span>` +
+      `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background-color:#27c93f;overflow:hidden;font-size:0;line-height:0;">&nbsp;</span>`
     const label = lang
       ? `<span style="${escapeHtmlAttr(labelStyle)}">${esc(lang)}</span>`
       : ''
     return (
       `<section${dl(token)} style="${escapeHtmlAttr(frameStyle)}">` +
       `<section style="${escapeHtmlAttr(headerStyle)}">${dots}${label}</section>` +
-      `<pre style="${escapeHtmlAttr(bodyStyle)}"><code style="${escapeHtmlAttr(codeStyle)}">${inner}</code></pre>` +
+      `<section style="${escapeHtmlAttr(bodyStyle)}">${linesHtml}</section>` +
       `</section>`
     )
   }
