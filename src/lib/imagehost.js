@@ -49,21 +49,51 @@ export const IMAGE_HOSTS = [
       { key: 'repo', label: '仓库', placeholder: '如 laogou717/imgs' },
       { key: 'token', label: 'Token', secret: true, placeholder: '含 repo 权限的 Personal Access Token' },
       { key: 'branch', label: '分支（可选）', placeholder: '默认 main' },
+      {
+        key: 'pathMode',
+        label: '上传路径',
+        type: 'select',
+        options: [
+          { value: 'date', name: '按年月日（2026/08/07）' },
+          { value: 'custom', name: '自定义路径' },
+        ],
+      },
+      {
+        key: 'customPath',
+        label: '自定义路径',
+        placeholder: '如 blog/images 或 2026/08',
+        dependsOn: 'pathMode',
+        dependsValue: 'custom',
+      },
+      { key: 'cdn', label: '开启 CDN 加速（fastly.jsdelivr.net）', type: 'checkbox' },
     ],
     async upload(blob, config, filename) {
       if (!config.repo || !config.token) throw new Error('未填写仓库或 Token')
       // GitHub Contents API 单文件上限 100MB；超大文件先拦截，避免白传
       if (blob.size > 100 * 1024 * 1024) throw new Error('GitHub 仓库单文件上限 100MB，请压缩后再上传')
       const branch = config.branch || 'main'
-      const path = `uploads/${Date.now()}-${filename}`
+      // 默认按 年/月/日 分文件夹；切到自定义路径时用用户填写的目录（清理首尾斜杠）
+      const d = new Date()
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const dateDir = `${yyyy}/${mm}/${dd}`
+      const customDir = String(config.customPath || '').trim().replace(/^\/+|\/+$/g, '')
+      const dir = config.pathMode === 'custom' && customDir ? customDir : dateDir
+      // 文件名保留时间戳前缀，避免同一天/同目录重名覆盖
+      const path = `${dir}/${Date.now()}-${filename}`
       const content = await blobToBase64(blob)
+      // commit 信息带上本次上传文件的 GitHub 链接（随 repo/分支/路径动态生成，不写死）
+      const fileUrl = `https://github.com/${config.repo}/blob/${branch}/${path}`
       const res = await fetch(`https://api.github.com/repos/${config.repo}/contents/${path}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `upload ${filename}`, content, branch }),
+        body: JSON.stringify({ message: `Upload by ${fileUrl}`, content, branch }),
       })
       if (!res.ok) throw new Error(`GitHub 返回 HTTP ${res.status}`)
-      return `https://cdn.jsdelivr.net/gh/${config.repo}@${branch}/${path}`
+      // 开启 CDN 加速时走 fastly.jsdelivr.net，否则用默认 cdn.jsdelivr.net
+      const base = config.cdn ? 'https://fastly.jsdelivr.net/gh' : 'https://cdn.jsdelivr.net/gh'
+      return `${base}/${config.repo}@${branch}/${path}`
     },
   },
   {

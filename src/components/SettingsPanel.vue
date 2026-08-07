@@ -135,15 +135,32 @@
           <option v-for="h in IMAGE_HOSTS" :key="h.id" :value="h.id">{{ h.name }}</option>
         </select>
         <template v-if="activeHost">
-          <div v-for="f in activeHost.fields" :key="f.key">
-            <div class="s-hint">{{ f.label }}</div>
-            <input
-              v-model="store.settings.imageHost.config[f.key]"
-              class="s-select-input"
-              :type="f.secret ? 'password' : 'text'"
-              :placeholder="f.placeholder"
-              :aria-label="f.label"
-            />
+          <div v-for="f in visibleHostFields" :key="f.key">
+            <label v-if="f.type === 'checkbox'" class="s-checkbox-row">
+              <input v-model="store.settings.imageHost.config[f.key]" type="checkbox" :aria-label="f.label" />
+              <span>{{ f.label }}</span>
+            </label>
+            <template v-else-if="f.type === 'select'">
+              <div class="s-hint">{{ f.label }}</div>
+              <select
+                class="s-select-input"
+                :aria-label="f.label"
+                :value="store.settings.imageHost.config[f.key] ?? f.options[0].value"
+                @change="store.settings.imageHost.config[f.key] = $event.target.value"
+              >
+                <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.name }}</option>
+              </select>
+            </template>
+            <template v-else>
+              <div class="s-hint">{{ f.label }}</div>
+              <input
+                v-model="store.settings.imageHost.config[f.key]"
+                class="s-select-input"
+                :type="f.secret ? 'password' : 'text'"
+                :placeholder="f.placeholder"
+                :aria-label="f.label"
+              />
+            </template>
           </div>
           <div class="s-label">
             粘贴时自动上传
@@ -220,6 +237,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeHintOnOut
 
 // ---- 图床 ----
 const activeHost = computed(() => IMAGE_HOSTS.find((h) => h.id === store.settings.imageHost.provider) || null)
+// 字段按依赖条件过滤：dependsOn 指定了依赖字段时，仅当依赖值匹配才显示
+const visibleHostFields = computed(() =>
+  (activeHost.value?.fields || []).filter(
+    (f) => !f.dependsOn || store.settings.imageHost.config[f.dependsOn] === (f.dependsValue ?? true)
+  )
+)
 const alwaysMode = computed(() => store.settings.imageHost.always)
 function setAlways(value) {
   store.settings.imageHost.always = value
