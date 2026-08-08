@@ -654,8 +654,9 @@ function onGalleryDblClick(e) {
 
 // 本地视频的复制策略：≤ 阈值的视频内联成 data URI 随 HTML 带走；
 // 超过阈值的内联会让 clipboard 写入失败甚至卡死页面，统一转为占位卡。
-// （公众号后台能否接受内联的 <video> 需实测；若无效，把阈值调为 0 即全部占位。）
-const INLINE_VIDEO_LIMIT = 10 * 1024 * 1024 // 10MB
+// 实测记录（2026-08）：29MB / 50MB 内联粘贴公众号均正常识别；300MB+ 只剩文字。
+// 故阈值定 60MB（base64 后约 80MB），留有余量。
+const INLINE_VIDEO_LIMIT = 60 * 1024 * 1024 // 60MB
 
 async function replaceLargeVideos(htmlText) {
   if (!htmlText.includes('data-lv="1"')) return htmlText
