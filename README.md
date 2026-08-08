@@ -2,7 +2,7 @@
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Pages](https://github.com/laogou717/md-wechat/actions/workflows/deploy.yml/badge.svg)](https://github.com/laogou717/md-wechat/actions/workflows/deploy.yml)
+[![构建](https://github.com/laogou717/md-wechat/actions/workflows/ci.yml/badge.svg)](https://github.com/laogou717/md-wechat/actions/workflows/ci.yml)
 
 面向公众号写作者的 Markdown 排版工具：左边写 Markdown，右边实时预览公众号效果，一键复制富文本，直接粘贴进公众号后台，样式不丢失。
 
@@ -73,7 +73,7 @@ npm test         # 运行测试（node --test）
 
 ## 在线版（可选）
 
-仓库自带 GitHub Actions 工作流：在仓库 Settings → Pages 选择 GitHub Actions 来源后，push 到 main 分支即自动构建并发布，无需自己的服务器。
+纯静态产物（`npm run build` 输出 `dist/`），部署到 Cloudflare Pages、Vercel 等任意静态托管即可。仓库自带的 GitHub Actions 工作流会在每次 push / PR 时自动跑构建与测试。
 
 ## 项目地址
 
