@@ -653,10 +653,10 @@ function onGalleryDblClick(e) {
 }
 
 // 本地视频的复制策略：≤ 阈值的视频内联成 data URI 随 HTML 带走；
-// 超过阈值的内联会让 clipboard 写入失败甚至卡死页面，统一转为占位卡。
-// 实测记录（2026-08）：29MB / 50MB 内联粘贴公众号均正常识别；300MB+ 只剩文字。
-// 故阈值定 60MB（base64 后约 80MB），留有余量。
-const INLINE_VIDEO_LIMIT = 60 * 1024 * 1024 // 60MB
+// 超过阈值统一转为带文件名的占位卡（粘贴后在公众号后台插入真视频）。
+// 官方限制（已实测确认）：公众号保存要求"正文总大小 ≤ 10M 字节"，内联视频
+// base64 后计入正文，故按文件 ≤7.5MB 内联（base64 后 ≈10M，贴线达标）。
+const INLINE_VIDEO_LIMIT = 7.5 * 1024 * 1024 // 7.5MB（base64 后约 10M 正文）
 
 async function replaceLargeVideos(htmlText) {
   if (!htmlText.includes('data-lv="1"')) return htmlText
@@ -679,7 +679,8 @@ async function replaceLargeVideos(htmlText) {
       }
       // 拿不到 blob（已清理）也转占位，避免复制出死链接
       if (!id.startsWith('local:') || size > INLINE_VIDEO_LIMIT) {
-        replace.set(job.block, copyVideoPlaceholder())
+        const name = job.block.match(/data-name="([^"]+)"/i)?.[1] || ''
+        replace.set(job.block, copyVideoPlaceholder(name))
       }
     })
   )

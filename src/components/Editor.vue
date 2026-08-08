@@ -254,7 +254,8 @@ async function insertVideoFile(file) {
     await putImage(id, file)
     cacheImage(id, file)
     const { from, to } = view.state.selection.main
-    const insert = `\n\n<video src="local:${id}"></video>\n\n`
+    const safeName = String(file.name || '').replace(/["<>]/g, '')
+    const insert = `\n\n<video src="local:${id}" data-name="${safeName}"></video>\n\n`
     view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } })
     mediaNotify('已插入视频，本地可预览；复制后可去公众号测试效果')
   } catch {

@@ -387,11 +387,16 @@ function createMd(theme, opts) {
   const VIDEO_FILE = /^https?:\/\/\S+?\.(?:mp4|mov|m4v|webm|m3u8)(?:\?\S*)?$/i
   const detectVideo = (text) => {
     const s = text.trim()
-    if (/^<video[\s>][\s\S]*$/i.test(s)) return s.match(/src=["']([^"']+)["']/i)?.[1] ?? ''
-    if (/^<iframe[\s>][\s\S]*$/i.test(s) && VIDEO_HOSTS.test(s)) {
-      return s.match(/src=["']([^"']+)["']/i)?.[1] ?? ''
+    if (/^<video[\s>][\s\S]*$/i.test(s)) {
+      return {
+        url: s.match(/src=["']([^"']+)["']/i)?.[1] ?? '',
+        name: s.match(/data-name=["']([^"']+)["']/i)?.[1] ?? '',
+      }
     }
-    if (VIDEO_FILE.test(s)) return s
+    if (/^<iframe[\s>][\s\S]*$/i.test(s) && VIDEO_HOSTS.test(s)) {
+      return { url: s.match(/src=["']([^"']+)["']/i)?.[1] ?? '', name: '' }
+    }
+    if (VIDEO_FILE.test(s)) return { url: s, name: '' }
     return null
   }
   const videoPlaceholder = (url, map) =>
@@ -403,18 +408,21 @@ function createMd(theme, opts) {
     const t = state.tokens
     for (let i = 0; i < t.length; i++) {
       if (t[i]?.type !== 'paragraph_open' || t[i + 1]?.type !== 'inline' || t[i + 2]?.type !== 'paragraph_close') continue
-      const url = detectVideo(t[i + 1].content)
-      if (url === null) continue
+      const v = detectVideo(t[i + 1].content)
+      if (v === null) continue
+      const { url, name } = v
       const tok = new state.Token('html_block', '', 0)
       tok.map = t[i].map
       if (url.startsWith('local:')) {
         // 本地粘贴的视频：预览渲染为可播放的播放器；
-        // data-lv 标记供复制链路识别并替换为占位卡
+        // data-lv 标记供复制链路识别并替换为占位卡，data-name 保留文件名
         const realUrl = resolveImageSrc(url)
         const line = t[i].map ? ` data-line="${t[i].map[0]}"` : ''
-        tok.content = `<section${line} data-lv="1" style="${escapeHtmlAttr(
+        const nameAttr = name ? ` data-name="${escapeHtmlAttr(name)}"` : ''
+        const hint = name ? `本地视频预览 · ${esc(name)}` : '本地视频预览'
+        tok.content = `<section${line} data-lv="1"${nameAttr} style="${escapeHtmlAttr(
           styles.video
-        )}"><video src="${esc(realUrl)}" controls preload="metadata" style="display:block;width:100%;border-radius:8px;margin:0 auto;"></video><p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">本地视频预览</p></section>`
+        )}"><video src="${esc(realUrl)}" controls preload="metadata" style="display:block;width:100%;border-radius:8px;margin:0 auto;"></video><p style="margin:0.4em 0 0;font-size:0.78em;opacity:0.55;">${hint}</p></section>`
       } else {
         tok.content = videoPlaceholder(url, t[i].map)
       }
@@ -824,6 +832,8 @@ export function stripPreviewMeta(html) {
 
 // 复制链路用的视频占位卡：与最近一次渲染同款外观。调用方在把 data-lv 区块
 // 替换为占位卡时使用（视频是否内联由应用侧按大小阈值决定）。
-export function copyVideoPlaceholder() {
-  return buildVideoPlaceholder(lastThemeStyles?.video || '', { note: '本地视频文件（未内联）' })
+// 带上文件名，方便作者在公众号后台插入时对照查找。
+export function copyVideoPlaceholder(name = '') {
+  const note = name ? `本地视频：${name}` : '本地视频文件（未内联）'
+  return buildVideoPlaceholder(lastThemeStyles?.video || '', { note })
 }
