@@ -2,9 +2,9 @@
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![构建](https://github.com/laogou717/md-wechat/actions/workflows/ci.yml/badge.svg)](https://github.com/laogou717/md-wechat/actions/workflows/ci.yml)
+[![构建](https://github.com/shimostudio/md-wechat/actions/workflows/ci.yml/badge.svg)](https://github.com/shimostudio/md-wechat/actions/workflows/ci.yml)
 
-面向公众号写作者的 Markdown 排版工具：左边写 Markdown，右边实时预览公众号效果，一键复制富文本，直接粘贴进公众号后台，样式不丢失。
+面向公众号写作者的 Markdown 排版工具：左边写 Markdown，右边实时预览公众号效果；文章归档后可生成一个不依赖本机数据的公开排版页，手机打开即可复制富文本。
 
 <img width="5104" height="2390" alt="image" src="https://github.com/user-attachments/assets/5396e2d0-a417-48b7-9b01-848a4d24eeae" />
 
@@ -47,6 +47,100 @@ npm install   # 安装依赖
 npm run dev   # 启动开发服务器，默认 http://localhost:5173
 ```
 
+## AI / MCP 接口
+
+项目提供一个本地 MCP 服务，让支持 MCP 的 AI 客户端直接操作当前打开的网页。由于文章和图片数据默认保存在浏览器本地，MCP 服务通过开发服务器的本地控制桥与网页通信，不会把文章上传到外部服务。
+
+先启动网站并保持页面打开：
+
+```bash
+npm run dev
+```
+
+然后在另一个终端启动 MCP 服务：
+
+```bash
+npm run mcp
+```
+
+MCP 服务默认连接 `http://127.0.0.1:5173`，也可以通过 `MD_WECHAT_URL` 指定其他本地地址。可用工具包括：
+
+- 读取、创建、修改、切换、重命名、删除和恢复文章
+- 列出和切换 26 套排版主题
+- 修改字号、字体、预览设备、画廊模式等安全设置
+- 获取当前文章的公众号预览 HTML
+- 载入内置示例文章、恢复最近一次备份
+- 将 `{{IMAGE:01}}` 图片锚点导入浏览器本地图片库
+- 调用网站现有复制逻辑，把富文本写入系统剪贴板
+
+以支持 MCP 的客户端为例，stdio 配置如下：
+
+```json
+{
+  "mcpServers": {
+    "md-wechat": {
+      "command": "npm",
+      "args": ["run", "mcp", "--prefix", "/Users/shimo/项目/md-wechat"]
+    }
+  }
+}
+```
+
+本地控制桥只监听 Vite 开发服务器的本机地址；图床供应商、Token 等敏感配置不会通过 MCP 读取或修改。健康检查地址为 `http://127.0.0.1:5173/__md_wechat/health`。
+
+### Writer OS → md-wechat → 微信公众号草稿
+
+Writer OS 文章正文可以保留 `{{IMAGE:01}}` 或 `<!-- IMAGE:01 -->` 图片锚点。然后调用 `md_wechat_import_assets`，为每个锚点传入本地图片的绝对路径：
+
+```json
+{
+  "assets": [
+    {
+      "anchor": "01",
+      "path": "/absolute/path/01.png",
+      "alt": "概念示意图",
+      "caption": "文章中的概念关系"
+    }
+  ]
+}
+```
+
+导入完成后调用 `md_wechat_copy_rich_text`，再由浏览器操控能力把系统剪贴板粘贴到已登录的微信公众号草稿编辑器。该项目不会自动处理公众号登录、验证码，也不会自动点击“发布”或“群发”。
+
+### Chrome 扩展：一键粘贴到三平台草稿
+
+项目内置 `extension/` Chrome 扩展，支持微信公众号、抖音和小红书创作页面。先运行 `npm run dev:ensure`，再在 Chrome 的 `chrome://extensions/` 开启开发者模式，选择“加载已解压的扩展程序”并加载 `extension/` 文件夹。打开目标平台编辑页后点击扩展中的“粘贴并保存草稿”。扩展只读取 md-wechat 当前文章的标题、正文和图片，不读取登录态；只保存草稿，不点击发布、群发或提交审核。
+
+### Writer OS → md-wechat → 平台草稿全流程
+
+Writer OS 负责从一段思考生成文章、主封面、段落配图并归档；md-wechat 负责本地图片锚点替换、主题排版和发布 HTML；Chrome 扩展负责在已登录的平台创作页中填标题、粘贴正文、提交图片并保存草稿。
+
+先保持 md-wechat 页面和目标平台编辑页打开，并确保 Chrome 扩展已加载，然后运行：
+
+```bash
+cd "/Users/shimo/项目/md-wechat"
+npm run writer:publish -- "/绝对路径/Writer OS文章.md" --platform wechat
+```
+
+平台参数可用 `wechat`、`douyin` 或 `xiaohongshu`。命令会等待扩展回报草稿保存结果；如果页面未打开、图片缺失、标题不匹配或保存失败，会返回错误，不会伪造成功。该命令不负责替代 Writer OS 的文章写作和生图调用，Writer OS 完成归档后自动进入本流程。
+
+### Writer OS → 公开排版页 → 手机复制
+
+这是目前推荐的跨设备路径：Writer OS 生成文章、主封面和段落配图并归档后，将归档文章打包到 `public/articles/<slug>/`，再由 GitHub Pages 发布。
+
+```bash
+cd "/Users/shimo/项目/md-wechat"
+npm run writer:public -- "/绝对路径/Writer OS文章.md" --theme literary
+```
+
+生成后提交并推送到 `main`，GitHub Actions 会自动测试、构建并部署 Pages。公开页地址格式为：
+
+```text
+https://<GitHub用户名>.github.io/<仓库名>/?article=<URL编码后的slug>
+```
+
+手机打开这个地址，点击右上角「复制富文本」，再打开公众号助手粘贴并填写必要信息。该公开页只读取仓库中的 `article.json` 和图片，不依赖原电脑的 localStorage / IndexedDB，因此不需要自己的服务器，也不要求手机与电脑在同一网络。
+
 ## 构建与测试
 
 ```bash
@@ -73,11 +167,11 @@ npm test         # 运行测试（node --test）
 
 ## 在线版（可选）
 
-纯静态产物（`npm run build` 输出 `dist/`），部署到 Cloudflare Pages、Vercel 等任意静态托管即可。仓库自带的 GitHub Actions 工作流会在每次 push / PR 时自动跑构建与测试。
+纯静态产物（`npm run build` 输出 `dist/`），部署到 GitHub Pages、Cloudflare Pages、Vercel 等任意静态托管即可。仓库内置 `.github/workflows/deploy-pages.yml`，推送 `main` 后会自动跑测试、构建并部署 GitHub Pages。
 
 ## 项目地址
 
-https://github.com/laogou717/md-wechat
+https://github.com/shimostudio/md-wechat
 
 ## License
 

@@ -72,6 +72,198 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 公网文章页：不依赖本机 IndexedDB，手机打开即可阅读并复制富文本 */
+.public-app {
+  min-height: 100%;
+  overflow: auto;
+  color: #202522;
+  background: #f3f5f3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+.public-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  padding: 10px max(18px, calc((100vw - 1100px) / 2));
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #e2e7e3;
+  box-shadow: 0 4px 18px rgba(31, 47, 37, 0.07);
+  backdrop-filter: blur(16px);
+}
+
+.public-brand,
+.public-brand > div {
+  display: flex;
+  align-items: center;
+}
+
+.public-brand {
+  gap: 10px;
+  min-width: 0;
+}
+
+.public-brand > div {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.public-brand strong {
+  color: #18201c;
+  font-size: 17px;
+}
+
+.public-brand span:last-child {
+  color: #7d8b83;
+  font-size: 11px;
+}
+
+.public-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #fff;
+  background: #08a85a;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.public-copy {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 18px;
+  color: #fff;
+  background: #202120;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.public-copy:active {
+  transform: translateY(1px);
+}
+
+.public-main {
+  width: min(900px, calc(100% - 28px));
+  margin: 24px auto 56px;
+}
+
+.public-cover {
+  display: block;
+  width: min(900px, 100%);
+  max-height: 390px;
+  margin: 0 auto 20px;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(31, 47, 37, 0.12);
+}
+
+.public-meta {
+  margin: 0 auto 18px;
+  max-width: 760px;
+}
+
+.public-meta h1 {
+  margin: 0 0 8px;
+  color: #18201c;
+  font-size: clamp(24px, 5vw, 36px);
+  line-height: 1.25;
+}
+
+.public-meta p {
+  margin: 0;
+  color: #7d8b83;
+  font-size: 14px;
+}
+
+.public-wechat {
+  overflow: hidden;
+  min-height: 300px;
+  background: #fff;
+  border: 1px solid #e2e7e3;
+  border-radius: 16px;
+  box-shadow: 0 12px 34px rgba(31, 47, 37, 0.09);
+}
+
+.public-wechat .page {
+  min-height: 300px;
+  margin: 0 auto;
+}
+
+.public-state {
+  width: min(760px, calc(100% - 36px));
+  margin: 80px auto;
+  padding: 22px;
+  color: #4d5b53;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #e2e7e3;
+  border-radius: 14px;
+}
+
+.public-error {
+  color: #a23f3f;
+  background: #fff8f7;
+}
+
+.public-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 22px;
+  z-index: 30;
+  max-width: min(360px, calc(100% - 36px));
+  padding: 11px 16px;
+  color: #fff;
+  background: rgba(32, 33, 32, 0.92);
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .public-header {
+    min-height: 58px;
+    padding: 8px 12px 8px 16px;
+  }
+
+  .public-copy {
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+
+  .public-main {
+    width: 100%;
+    margin: 0 auto 36px;
+  }
+
+  .public-cover {
+    max-height: 220px;
+    margin: 0 0 16px;
+    border-radius: 0;
+  }
+
+  .public-meta {
+    padding: 0 16px;
+  }
+
+  .public-wechat {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+}
+
 button,
 input,
 textarea {

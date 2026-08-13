@@ -31,23 +31,6 @@
       </div>
     </div>
 
-    <nav class="tb-social" aria-label="相关链接">
-      <a href="https://www.laogou717.com" target="_blank" rel="noopener noreferrer" title="我的博客">
-        <Icon name="blog" :size="16" aria-hidden="true" />
-      </a>
-      <a href="https://github.com/laogou717/md-wechat" target="_blank" rel="noopener noreferrer" title="GitHub 仓库">
-        <Icon name="github" :size="16" aria-hidden="true" />
-      </a>
-      <a href="https://raw.githubusercontent.com/JonasTech0/Jonas-imgs-240211/main/imagesIMG_2767.png" target="_blank" rel="noopener noreferrer" title="请我喝咖啡">
-        <Icon name="coffee" :size="16" aria-hidden="true" />
-      </a>
-      <a href="https://x.com/shenfanlaogou" target="_blank" rel="noopener noreferrer" title="X（Twitter）">
-        <Icon name="xlogo" :size="14" aria-hidden="true" />
-      </a>
-      <a href="https://space.bilibili.com/46377861" target="_blank" rel="noopener noreferrer" title="B站">
-        <Icon name="bilibili" :size="16" aria-hidden="true" />
-      </a>
-    </nav>
   </header>
 </template>
 
@@ -87,7 +70,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeHelpOnOut
 <style scoped>
 .tb-help {
   position: relative;
-  margin-right: 4px;
+  margin-right: 0;
 }
 
 .tb-help-btn {
@@ -152,24 +135,4 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeHelpOnOut
   color: #9a948a;
 }
 
-.tb-social {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.tb-social a {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  color: var(--ink-2, #6b6b72);
-  border-radius: 8px;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.tb-social a:hover {
-  color: var(--ink, #18181b);
-  background: var(--line-2, #f1ede1);
-}
 </style>

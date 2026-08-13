@@ -362,7 +362,8 @@ export function clearGalleryOverride(src) {
 export function usedImageIds() {
   const ids = new Set()
   const scan = (text) => {
-    for (const m of String(text || '').matchAll(/local:((?:img|vid)-[a-z0-9]+)/g)) ids.add(m[1])
+    // Writer OS / MCP 导入的图片也可能使用 img- 前缀以外的本地媒体 ID。
+    for (const m of String(text || '').matchAll(/local:([a-z0-9][a-z0-9-]*)/g)) ids.add(m[1])
   }
   for (const d of store.docs) scan(d.content)
   for (const d of store.trash) scan(d.content)
@@ -487,6 +488,11 @@ export function restoreDocument() {
   write(KEYS.backup, current)
   store.md = previous
   return true
+}
+
+export function clearBackup() {
+  store.backupMd = null
+  write(KEYS.backup, null)
 }
 
 // ---------- 多文档操作 ----------
@@ -629,7 +635,7 @@ watch(
 )
 
 // 页面在防抖窗口内关闭时，仍把最后一次输入同步落盘。
-function flushPendingWrites() {
+export function flushPendingWrites() {
   if (contentTimer) {
     clearTimeout(contentTimer)
     contentTimer = null

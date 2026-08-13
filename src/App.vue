@@ -1,5 +1,41 @@
 <template>
-  <div class="app-d">
+  <div v-if="publicMode" class="public-app">
+    <header class="public-header">
+      <div class="public-brand">
+        <span class="public-mark">字</span>
+        <div>
+          <strong>字间排版</strong>
+          <span>手机复制工作台</span>
+        </div>
+      </div>
+      <button class="public-copy" type="button" :disabled="publicLoading" @click="doCopy">
+        {{ publicLoading ? '正在加载…' : '复制富文本' }}
+      </button>
+    </header>
+
+    <div v-if="publicLoading" class="public-state">正在加载文章排版…</div>
+    <div v-else-if="publicError" class="public-state public-error">{{ publicError }}</div>
+    <main v-else class="public-main">
+      <img v-if="publicCoverUrl" class="public-cover" :src="publicCoverUrl" alt="文章主封面" />
+      <div class="public-meta">
+        <h1>{{ documentTitle }}</h1>
+        <p>点击右上角复制富文本，再粘贴到公众号助手。</p>
+      </div>
+      <div class="wechat-chrome public-wechat">
+        <div class="wc-title">{{ documentTitle }}</div>
+        <div class="wc-meta">
+          <span class="wc-account">字间排版</span>
+          <span class="wc-author">作者</span>
+          <time>{{ todayText }}</time>
+        </div>
+        <div ref="previewViewport" class="page" :style="{ backgroundColor: renderTheme.surface || '#ffffff' }" v-html="html"></div>
+      </div>
+    </main>
+
+    <div v-if="store.toast" class="public-toast" role="status" aria-live="polite">{{ store.toast }}</div>
+  </div>
+
+  <div v-else class="app-d">
     <TopBar />
 
     <div class="d-body">
@@ -134,12 +170,47 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import PreviewBar from './components/PreviewBar.vue'
 import Toolbar from './components/Toolbar.vue'
 import Editor from './components/Editor.vue'
-import { store, theme, notify, docTitle, countChars, restoreDocument, createDocument, importContents, registerImageAspect, getImageAspect, setGalleryOverride, clearGalleryOverride } from './lib/store.js'
+import {
+  store,
+  theme,
+  notify,
+  docTitle,
+  countChars,
+  restoreDocument,
+  createDocument,
+  selectDocument,
+  renameDocument,
+  deleteDocument,
+  restoreFromTrash,
+  removeFromTrash,
+  importContents,
+  replaceDocument,
+  clearBackup,
+  usedImageIds,
+  flushPendingWrites,
+  registerImageAspect,
+  getImageAspect,
+  setActiveAccent,
+  setSlotColor,
+  setGalleryOverride,
+  clearGalleryOverride,
+} from './lib/store.js'
 import { themes } from './lib/themes.js'
 import { renderMarkdown, stripPreviewMeta, copyVideoPlaceholder } from './lib/renderer.js'
 import { copyRichText, copyText } from './lib/clipboard.js'
-import { getImage, blobToDataUrl, getCachedImageEntries } from './lib/imagedb.js'
+import { getImage, putImage, cacheImage, blobToDataUrl, getCachedImageEntries, pruneImages } from './lib/imagedb.js'
 import { sample, samples } from './lib/sample.js'
+import { startAutomationBridge } from './lib/automation.js'
+
+function htmlToPlainText(htmlText) {
+  const element = document.createElement('div')
+  element.innerHTML = htmlText
+  return element.textContent || ''
+}
+
+function removeLeadingArticleTitle(htmlText) {
+  return String(htmlText || '').replace(/^\s*<h1\b[^>]*>[\s\S]*?<\/h1>\s*/i, '')
+}
 
 const editorRef = ref(null)
 const fileInput = ref(null)
@@ -147,6 +218,40 @@ const mainRef = ref(null)
 const previewStage = ref(null)
 const previewViewport = ref(null)
 const previewScale = ref(1)
+const publicSlug = new URLSearchParams(window.location.search).get('article') || ''
+const publicMode = ref(Boolean(publicSlug))
+const publicLoading = ref(Boolean(publicSlug))
+const publicError = ref('')
+const publicCoverUrl = ref('')
+let stopAutomationBridge = () => {}
+
+function publicAssetUrl(slug, assetPath) {
+  const filename = String(assetPath || '').replace(/^.*?assets\//, '')
+  const base = new URL(import.meta.env.BASE_URL, window.location.href)
+  return new URL(`articles/${encodeURIComponent(slug)}/assets/${encodeURIComponent(filename)}`, base).href
+}
+
+async function loadPublicArticle() {
+  if (!publicMode.value) return
+  try {
+    const base = new URL(import.meta.env.BASE_URL, window.location.href)
+    const articleUrl = new URL(`articles/${encodeURIComponent(publicSlug)}/article.json`, base)
+    const response = await fetch(articleUrl, { cache: 'no-store' })
+    if (!response.ok) throw new Error('文章链接不存在或尚未部署')
+    const article = await response.json()
+    if (!article.markdown) throw new Error('在线文章内容为空')
+    const markdown = String(article.markdown).replace(/assets\/([^\s)]+)/g, (_, filename) => publicAssetUrl(publicSlug, filename))
+    replaceDocument(markdown)
+    if (article.themeId && themes.some((item) => item.id === article.themeId)) store.themeId = article.themeId
+    publicCoverUrl.value = article.cover ? publicAssetUrl(publicSlug, article.cover) : ''
+    await nextTick()
+    store.settings.viewMode = 'preview'
+  } catch (error) {
+    publicError.value = error?.message || String(error)
+  } finally {
+    publicLoading.value = false
+  }
+}
 
 function openDocuments() {
   store.ui.documentView = 'documents'
@@ -657,6 +762,7 @@ function onGalleryDblClick(e) {
 // 官方限制（已实测确认）：公众号保存要求"正文总大小 ≤ 10M 字节"，内联视频
 // base64 后计入正文，故按文件 ≤7.5MB 内联（base64 后 ≈10M，贴线达标）。
 const INLINE_VIDEO_LIMIT = 7.5 * 1024 * 1024 // 7.5MB（base64 后约 10M 正文）
+const INLINE_IMAGE_LIMIT = 900 * 1024 // 微信粘贴大 PNG 时先尝试压成 JPEG
 
 async function replaceLargeVideos(htmlText) {
   if (!htmlText.includes('data-lv="1"')) return htmlText
@@ -694,8 +800,30 @@ async function doCopy() {
   // 先剥离预览标记、按大小处理视频，再内联 blob 图片（避免处理巨型 base64 字符串）
   let htmlText = stripPreviewMeta(html.value)
   htmlText = await replaceLargeVideos(htmlText)
+  // 公开页和公众号编辑器都有独立标题字段，复制正文时不要重复插入文章级 H1。
+  htmlText = removeLeadingArticleTitle(htmlText)
   const ok = await copyRichText(await inlineLocalImages(htmlText))
   notify(ok ? '排版已复制，可以去公众号后台粘贴了' : '复制失败，请手动全选预览内容')
+  return ok
+}
+
+async function getAutomationPublishPayload() {
+  const validation = await validateAutomationArticle()
+  if (!validation.valid) throw new Error(validation.errors.join('；'))
+  await collectImageAspects()
+  await nextTick()
+  let htmlText = stripPreviewMeta(html.value)
+  htmlText = await replaceLargeVideos(htmlText)
+  htmlText = await inlineLocalImages(htmlText)
+  // 三个平台都有独立标题字段，正文不重复插入文章级 h1。
+  htmlText = removeLeadingArticleTitle(htmlText)
+  return {
+    title: documentTitle.value,
+    html: htmlText,
+    text: htmlToPlainText(htmlText),
+    validation,
+    generatedAt: new Date().toISOString(),
+  }
 }
 
 // 把 HTML 里图片、小视频的 blob: 链接统一还原成 data URI
@@ -705,9 +833,53 @@ async function inlineLocalImages(htmlText) {
     if (!htmlText.includes(url)) continue
     const blob = await getImage(id)
     if (!blob) continue
-    htmlText = htmlText.split(url).join(await blobToDataUrl(blob))
+    htmlText = htmlText.split(url).join(await blobToPortableDataUrl(blob))
   }
   return htmlText
+}
+
+// 微信编辑器对超大 data:image PNG 的粘贴兼容性较差。对不透明的大图
+// 尝试转成 JPEG；若转换失败或结果更大，则保留原始格式，避免损失内容。
+async function blobToPortableDataUrl(blob) {
+  if (!blob.type.startsWith('image/') || blob.size <= INLINE_IMAGE_LIMIT || blob.type === 'image/jpeg') {
+    return blobToDataUrl(blob)
+  }
+  let bitmap
+  let objectUrl
+  try {
+    if (typeof createImageBitmap === 'function') {
+      bitmap = await createImageBitmap(blob)
+    } else {
+      objectUrl = URL.createObjectURL(blob)
+      bitmap = await new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve(image)
+        image.onerror = () => reject(new Error('image decode failed'))
+        image.src = objectUrl
+      })
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return blobToDataUrl(blob)
+    context.drawImage(bitmap, 0, 0)
+    // 有透明通道的图保留 PNG，避免把透明内容强行变成黑底。
+    if (blob.type === 'image/png') {
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      for (let i = 3; i < pixels.length; i += 4) {
+        if (pixels[i] < 255) return blobToDataUrl(blob)
+      }
+    }
+    const compressed = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.84))
+    if (!compressed || compressed.size >= blob.size) return blobToDataUrl(blob)
+    return blobToDataUrl(compressed)
+  } catch {
+    return blobToDataUrl(blob)
+  } finally {
+    bitmap?.close?.()
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
 }
 
 async function copySource() {
@@ -781,9 +953,389 @@ function onKey(e) {
   }
 }
 
+// ---- 本地 AI 控制桥 ----
+
+const SAFE_SETTING_KEYS = new Set([
+  'fontSize',
+  'fontFamily',
+  'macCode',
+  'previewWidth',
+  'editorPct',
+  'viewMode',
+  'galleryMode',
+  'galleryRatio',
+])
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function documentSummary(doc, { includeContent = false } = {}) {
+  const summary = {
+    id: doc.id,
+    title: docTitle(doc.content),
+    charCount: countChars(doc.content),
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  }
+  if (includeContent) summary.content = doc.content
+  return summary
+}
+
+function safeSettings() {
+  const settings = cloneJson(store.settings)
+  delete settings.imageHost
+  return settings
+}
+
+function getDocumentOrThrow(id) {
+  const targetId = id || store.activeDocId
+  const doc = store.docs.find((item) => item.id === targetId)
+  if (!doc) throw new Error(`文章不存在：${targetId}`)
+  return doc
+}
+
+function assertContent(content) {
+  if (typeof content !== 'string') throw new Error('content 必须是字符串')
+  if (new TextEncoder().encode(content).byteLength > 5 * 1024 * 1024) {
+    throw new Error('文章内容超过 5 MB 限制')
+  }
+}
+
+function findDocumentByTitle(title) {
+  const clean = String(title || '').trim()
+  if (!clean) return null
+  return [...store.docs]
+    .filter((doc) => docTitle(doc.content) === clean)
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0] || null
+}
+
+function decodeAssetData(data, mimeType = 'application/octet-stream') {
+  if (typeof data !== 'string' || !data) throw new Error('asset.data 必须是非空 base64 或 data URL')
+  const match = data.match(/^data:([^;,]+)?;base64,(.*)$/s)
+  const mime = match?.[1] || mimeType || 'application/octet-stream'
+  const encoded = (match?.[2] || data).replace(/\s/g, '')
+  if (!encoded || encoded.length > 9_500_000) throw new Error('单个资源超过控制桥 10 MB 限制')
+  let binary
+  try {
+    binary = atob(encoded)
+  } catch {
+    throw new Error('asset.data 不是有效的 base64 数据')
+  }
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+function assetAnchorPatterns(anchor) {
+  const key = String(anchor || '').trim()
+  if (!key) throw new Error('asset.anchor 不能为空')
+  return [`{{IMAGE:${key}}}`, `<!-- IMAGE:${key} -->`]
+}
+
+async function importAutomationAsset(asset = {}) {
+  const patterns = assetAnchorPatterns(asset.anchor)
+  const current = String(store.md || '')
+  if (!patterns.some((pattern) => current.includes(pattern))) {
+    throw new Error(`文章中找不到图片锚点：${patterns[0]}`)
+  }
+  const blob = decodeAssetData(asset.data, asset.mimeType)
+  const id = `img-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  await putImage(id, blob)
+  cacheImage(id, blob)
+  const alt = String(asset.caption || asset.alt || asset.filename || `图片 ${asset.anchor}`).trim()
+  const replacement = `![${alt.replace(/[\[\]]/g, '')}](local:${id})`
+  let next = current
+  for (const pattern of patterns) next = next.split(pattern).join(replacement)
+  replaceDocument(next)
+  store.imageCacheVersion += 1
+  return { anchor: asset.anchor, id, filename: asset.filename || '', bytes: blob.size, replacement }
+}
+
+async function importAutomationAssets(assets = [], documentId) {
+  const doc = getDocumentOrThrow(documentId)
+  selectDocument(doc.id)
+  const list = Array.isArray(assets) ? assets : []
+  if (!list.length) throw new Error('assets 不能为空')
+  const current = String(store.md || '')
+  for (const asset of list) {
+    const patterns = assetAnchorPatterns(asset.anchor)
+    if (!patterns.some((pattern) => current.includes(pattern))) {
+      throw new Error(`文章中找不到图片锚点：${patterns[0]}`)
+    }
+  }
+  const imported = []
+  for (const asset of list) imported.push(await importAutomationAsset(asset))
+  await nextTick()
+  flushPendingWrites()
+  return { imported, document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+}
+
+async function validateAutomationArticle(expectedTitle = '') {
+  const title = documentTitle.value
+  const content = String(store.md || '')
+  const anchors = [...content.matchAll(/\{\{IMAGE:([^}]+)\}\}|<!--\s*IMAGE:([^>]+?)\s*-->/g)]
+    .map((match) => String(match[1] || match[2] || '').trim())
+  const localIds = [...new Set([...content.matchAll(/local:([a-z0-9][a-z0-9-]*)/g)].map((match) => match[1]))]
+  const missingMedia = []
+  for (const id of localIds) if (!(await getImage(id))) missingMedia.push(id)
+  const errors = []
+  if (expectedTitle && title !== expectedTitle) errors.push(`标题不匹配：${title}`)
+  if (anchors.length) errors.push(`仍有 ${anchors.length} 个图片锚点未替换`)
+  if (missingMedia.length) errors.push(`缺少本地图片：${missingMedia.join(', ')}`)
+  return { valid: errors.length === 0, title, imageCount: localIds.length, anchors, missingMedia, errors }
+}
+
+function applySafeSettings(next) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    throw new Error('settings 必须是对象')
+  }
+  for (const key of Object.keys(next)) {
+    if (!SAFE_SETTING_KEYS.has(key)) throw new Error(`不允许修改设置：${key}`)
+  }
+  if ('fontSize' in next) {
+    const value = Number(next.fontSize)
+    if (!Number.isFinite(value) || value < 12 || value > 32) throw new Error('fontSize 必须在 12 到 32 之间')
+    store.settings.fontSize = Math.round(value)
+  }
+  if ('fontFamily' in next && !['theme', 'serif', 'sans', 'mono'].includes(next.fontFamily)) {
+    throw new Error('fontFamily 必须是 theme、serif、sans 或 mono')
+  }
+  if ('previewWidth' in next && !['full', 'mobile', 'desktop'].includes(next.previewWidth)) {
+    throw new Error('previewWidth 必须是 full、mobile 或 desktop')
+  }
+  if ('viewMode' in next && !['split', 'preview'].includes(next.viewMode)) {
+    throw new Error('viewMode 必须是 split 或 preview')
+  }
+  if ('galleryMode' in next && !['collage', 'grid', 'stack'].includes(next.galleryMode)) {
+    throw new Error('galleryMode 必须是 collage、grid 或 stack')
+  }
+  if ('galleryRatio' in next && !['1:1', '4:5', '3:4'].includes(next.galleryRatio)) {
+    throw new Error('galleryRatio 必须是 1:1、4:5 或 3:4')
+  }
+  if ('editorPct' in next) {
+    const value = Number(next.editorPct)
+    if (!Number.isFinite(value) || value < 25 || value > 70) throw new Error('editorPct 必须在 25 到 70 之间')
+    store.settings.editorPct = Math.round(value)
+  }
+  if ('fontFamily' in next) store.settings.fontFamily = next.fontFamily
+  if ('macCode' in next) store.settings.macCode = Boolean(next.macCode)
+  if ('previewWidth' in next) store.settings.previewWidth = next.previewWidth
+  if ('viewMode' in next) store.settings.viewMode = next.viewMode
+  if ('galleryMode' in next) store.settings.galleryMode = next.galleryMode
+  if ('galleryRatio' in next) store.settings.galleryRatio = next.galleryRatio
+}
+
+async function executeAutomationAction(action, args = {}) {
+  switch (action) {
+    case 'get_state': {
+      await nextTick()
+      const includeContent = Boolean(args.includeContent)
+      return {
+        activeDocument: documentSummary(getDocumentOrThrow(), { includeContent }),
+        documents: store.docs.map((doc) => documentSummary(doc)),
+        trash: store.trash.map((doc) => documentSummary(doc)),
+        theme: { id: theme.value.id, name: theme.value.name },
+        settings: safeSettings(),
+        backupAvailable: typeof store.backupMd === 'string' && store.backupMd.length > 0,
+        ...(args.includeHtml ? { html: stripPreviewMeta(html.value) } : {}),
+      }
+    }
+    case 'list_documents':
+      return {
+        activeDocumentId: store.activeDocId,
+        documents: store.docs.map((doc) => documentSummary(doc)),
+        trash: store.trash.map((doc) => documentSummary(doc)),
+      }
+    case 'get_document': {
+      const doc = getDocumentOrThrow(args.documentId)
+      return { document: documentSummary(doc, { includeContent: true }) }
+    }
+    case 'set_document': {
+      assertContent(args.content)
+      const doc = getDocumentOrThrow(args.documentId)
+      selectDocument(doc.id)
+      const changed = replaceDocument(args.content)
+      await nextTick()
+      flushPendingWrites()
+      return { changed, document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+    }
+    case 'create_document': {
+      const content = args.content ?? `# ${String(args.title || '未命名文章').trim() || '未命名文章'}\n\n`
+      assertContent(content)
+      const doc = createDocument(content)
+      await nextTick()
+      flushPendingWrites()
+      return { document: documentSummary(doc, { includeContent: true }) }
+    }
+    case 'upsert_document': {
+      assertContent(args.content)
+      const title = String(args.title || docTitle(args.content)).trim()
+      let doc = args.documentId ? getDocumentOrThrow(args.documentId) : findDocumentByTitle(title)
+      if (doc) {
+        selectDocument(doc.id)
+        replaceDocument(args.content)
+        flushPendingWrites()
+        return { created: false, document: documentSummary(getDocumentOrThrow(doc.id), { includeContent: true }) }
+      }
+      doc = createDocument(args.content)
+      await nextTick()
+      flushPendingWrites()
+      return { created: true, document: documentSummary(doc, { includeContent: true }) }
+    }
+    case 'select_document': {
+      const doc = getDocumentOrThrow(args.documentId)
+      selectDocument(doc.id)
+      await nextTick()
+      return { document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+    }
+    case 'rename_document': {
+      const doc = getDocumentOrThrow(args.documentId)
+      const title = String(args.title || '').trim()
+      if (!title) throw new Error('title 不能为空')
+      renameDocument(doc.id, title)
+      await nextTick()
+      flushPendingWrites()
+      return { document: documentSummary(getDocumentOrThrow(doc.id), { includeContent: true }) }
+    }
+    case 'delete_document': {
+      const doc = getDocumentOrThrow(args.documentId)
+      deleteDocument(doc.id)
+      await nextTick()
+      flushPendingWrites()
+      return { activeDocumentId: store.activeDocId, documents: store.docs.map((item) => documentSummary(item)) }
+    }
+    case 'restore_from_trash': {
+      const id = String(args.documentId || '')
+      if (!store.trash.some((doc) => doc.id === id)) throw new Error(`回收站中不存在：${id}`)
+      restoreFromTrash(id)
+      await nextTick()
+      flushPendingWrites()
+      return { document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+    }
+    case 'remove_from_trash': {
+      const id = String(args.documentId || '')
+      if (!store.trash.some((doc) => doc.id === id)) throw new Error(`回收站中不存在：${id}`)
+      removeFromTrash(id)
+      return { trash: store.trash.map((doc) => documentSummary(doc)) }
+    }
+    case 'set_theme': {
+      const nextTheme = themes.find((item) => item.id === args.themeId)
+      if (!nextTheme) throw new Error(`主题不存在：${args.themeId}`)
+      store.themeId = nextTheme.id
+      if (args.accent !== undefined) setActiveAccent(args.accent || null)
+      if (args.slotColors && typeof args.slotColors === 'object') {
+        for (const [key, value] of Object.entries(args.slotColors)) setSlotColor(key, value || null)
+      }
+      await nextTick()
+      flushPendingWrites()
+      return { theme: { id: theme.value.id, name: theme.value.name }, settings: safeSettings() }
+    }
+    case 'list_themes':
+      return {
+        themes: themes.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          description: item.description,
+        })),
+      }
+    case 'set_settings':
+      applySafeSettings(args.settings)
+      await nextTick()
+      flushPendingWrites()
+      return { settings: safeSettings() }
+    case 'render_preview':
+      await nextTick()
+      return {
+        title: documentTitle.value,
+        theme: { id: theme.value.id, name: theme.value.name },
+        html: stripPreviewMeta(html.value),
+      }
+    case 'load_sample': {
+      const item = samples.find((entry) => entry.id === args.sampleId)
+      if (!item) throw new Error(`示例文章不存在：${args.sampleId}`)
+      const docs = importContents([{ name: item.title, content: item.md }])
+      await nextTick()
+      flushPendingWrites()
+      return { document: documentSummary(docs[docs.length - 1], { includeContent: true }) }
+    }
+    case 'restore_backup': {
+      const changed = restoreDocument()
+      await nextTick()
+      flushPendingWrites()
+      return { changed, document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+    }
+    case 'import_asset': {
+      const doc = getDocumentOrThrow(args.documentId)
+      selectDocument(doc.id)
+      const imported = await importAutomationAsset(args.asset)
+      await nextTick()
+      flushPendingWrites()
+      return { imported, document: documentSummary(getDocumentOrThrow(), { includeContent: true }) }
+    }
+    case 'import_assets': {
+      return await importAutomationAssets(args.assets, args.documentId)
+    }
+    case 'prepare_article': {
+      assertContent(args.content)
+      const title = String(args.title || docTitle(args.content)).trim()
+      const upserted = await executeAutomationAction('upsert_document', { content: args.content, title, documentId: args.documentId })
+      const imported = args.assets?.length
+        ? await importAutomationAssets(args.assets, upserted.document.id)
+        : { imported: [], document: upserted.document }
+      if (args.themeId) {
+        const nextTheme = themes.find((item) => item.id === args.themeId)
+        if (!nextTheme) throw new Error(`主题不存在：${args.themeId}`)
+        store.themeId = nextTheme.id
+      }
+      if (args.settings) applySafeSettings(args.settings)
+      await nextTick()
+      flushPendingWrites()
+      return {
+        created: upserted.created,
+        document: imported.document,
+        imported: imported.imported,
+        theme: { id: theme.value.id, name: theme.value.name },
+        settings: safeSettings(),
+        validation: await validateAutomationArticle(title),
+        preview: { title: documentTitle.value, html: stripPreviewMeta(html.value) },
+      }
+    }
+    case 'copy_rich_text': {
+      const validation = await validateAutomationArticle(args.expectedTitle)
+      if (!validation.valid) {
+        return { copied: false, requiresUiClick: false, validation, message: validation.errors.join('；') }
+      }
+      const ok = await doCopy()
+      return {
+        copied: Boolean(ok),
+        requiresUiClick: !ok,
+        validation,
+        message: ok ? '富文本已复制到剪贴板' : '复制失败，请在网页中手动点击复制富文本',
+      }
+    }
+    case 'get_publish_payload':
+      return await getAutomationPublishPayload()
+    case 'validate_article': {
+      return await validateAutomationArticle(args.expectedTitle)
+    }
+    case 'clear_backup': {
+      clearBackup()
+      return { cleared: true }
+    }
+    case 'prune_media': {
+      return await pruneImages(usedImageIds())
+    }
+    default:
+      throw new Error(`未知自动化操作：${action}`)
+  }
+}
+
 let previewResizeObserver = null
 
 onMounted(() => {
+  if (!publicMode.value) stopAutomationBridge = startAutomationBridge(executeAutomationAction)
   window.addEventListener('keydown', onKey)
   document.addEventListener('pointerdown', onGalleryPointerDown)
   document.addEventListener('dblclick', onGalleryDblClick)
@@ -794,9 +1346,11 @@ onMounted(() => {
     rebuildBlocks()
     collectImageAspects()
   })
+  loadPublicArticle()
 })
 
 onBeforeUnmount(() => {
+  stopAutomationBridge()
   window.removeEventListener('keydown', onKey)
   document.removeEventListener('pointerdown', onGalleryPointerDown)
   document.removeEventListener('dblclick', onGalleryDblClick)
