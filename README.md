@@ -126,26 +126,20 @@ npm run writer:publish -- "/绝对路径/Writer OS文章.md" --platform wechat
 
 ### Writer OS → 公开排版页 → 手机复制
 
-这是目前推荐的跨设备路径：Writer OS 生成文章、主封面和段落配图并归档后，将归档文章打包到 `public/articles/<slug>/`，再由 GitHub Pages 发布。
+这是目前推荐的跨设备路径：Writer OS 生成文章、主封面和段落配图并归档后，将归档文章打包到 `public/articles/<slug>/`，再由你的服务器和域名提供访问。
 
 ```bash
 cd "/Users/shimo/项目/md-wechat"
 npm run writer:public -- "/绝对路径/Writer OS文章.md" --theme literary
 ```
 
-如果希望归档后自动提交并推送，直接使用：
-
-```bash
-npm run writer:public:deploy -- "/绝对路径/Writer OS文章.md" --theme literary
-```
-
-GitHub Actions 会自动测试、构建并部署 Pages。公开页地址格式为：
+生成后，将项目构建产物部署到你的服务器。公开页地址格式为：
 
 ```text
 https://<GitHub用户名>.github.io/<仓库名>/?article=<URL编码后的slug>
 ```
 
-手机打开这个地址，点击右上角「复制富文本」，再打开公众号助手粘贴并填写必要信息。该公开页只读取仓库中的 `article.json` 和图片，不依赖原电脑的 localStorage / IndexedDB，因此不需要自己的服务器，也不要求手机与电脑在同一网络。
+手机打开这个地址，点击右上角「复制富文本」，再打开公众号助手粘贴并填写必要信息。该公开页只读取站点中的 `article.json` 和图片，不依赖原电脑的 localStorage / IndexedDB。
 
 ## 构建与测试
 
@@ -173,7 +167,7 @@ npm test         # 运行测试（node --test）
 
 ## 在线版（可选）
 
-纯静态产物（`npm run build` 输出 `dist/`），部署到 GitHub Pages、Cloudflare Pages、Vercel 等任意静态托管即可。仓库内置 `.github/workflows/deploy-pages.yml`，推送 `main` 后会自动跑测试、构建并部署 GitHub Pages。
+纯静态产物（`npm run build` 输出 `dist/`），可以部署到你的服务器、Cloudflare Pages、Vercel 等任意静态托管。服务器方案待接入信息确认后再补充部署脚本和域名配置。
 
 ## 项目地址
 
