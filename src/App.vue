@@ -795,6 +795,14 @@ async function replaceLargeVideos(htmlText) {
 }
 
 async function doCopy() {
+  // 公开号页面必须在真实点击手势内尽快写入剪贴板；公开资源已经是 HTTPS 图片，
+  // 不再等待本地图片测量、视频处理或 IndexedDB 查询，避免移动端丢失 transient activation。
+  if (publicMode.value) {
+    let publicHtml = removeLeadingArticleTitle(stripPreviewMeta(html.value))
+    const ok = await copyRichText(publicHtml)
+    notify(ok ? '排版已复制，可以去公众号助手粘贴了' : '复制失败，请检查浏览器剪贴板权限')
+    return ok
+  }
   await collectImageAspects()
   await nextTick()
   // 先剥离预览标记、按大小处理视频，再内联 blob 图片（避免处理巨型 base64 字符串）

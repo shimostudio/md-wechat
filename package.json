@@ -14,7 +14,8 @@
     "test": "node --test",
     "check:extension": "node scripts/check-extension.mjs",
     "writer:publish": "node scripts/writer-publish.mjs",
-    "writer:public": "node scripts/publish-public-article.mjs"
+    "writer:public": "node scripts/publish-public-article.mjs",
+    "writer:public:deploy": "node scripts/publish-public-deploy.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.3.2",

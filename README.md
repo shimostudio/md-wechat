@@ -133,7 +133,13 @@ cd "/Users/shimo/项目/md-wechat"
 npm run writer:public -- "/绝对路径/Writer OS文章.md" --theme literary
 ```
 
-生成后提交并推送到 `main`，GitHub Actions 会自动测试、构建并部署 Pages。公开页地址格式为：
+如果希望归档后自动提交并推送，直接使用：
+
+```bash
+npm run writer:public:deploy -- "/绝对路径/Writer OS文章.md" --theme literary
+```
+
+GitHub Actions 会自动测试、构建并部署 Pages。公开页地址格式为：
 
 ```text
 https://<GitHub用户名>.github.io/<仓库名>/?article=<URL编码后的slug>
